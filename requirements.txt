@@ -1,0 +1,7 @@
+# ParkSense Python Backend Dependencies
+# Author: mdanas-git
+flask>=2.2.0
+flask-cors>=3.0.0
+pyjwt>=2.8.0
+werkzeug>=2.2.0
+requests>=2.28.0

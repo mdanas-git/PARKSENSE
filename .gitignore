@@ -1,0 +1,49 @@
+# =========================================================
+# ParkSense - Git Ignore Configuration
+# Author: mdanas-git
+# =========================================================
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments & Virtualenv
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Local SQLite Database & runtime state
+parksense.db
+backend/parksense.db
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# Cloudflare Tunnel Binary & logs (large local binary)
+cloudflared.exe
+*.exe
+tunnel.log
+*.log
+
+# Scratch, build, and temporary archives
+scratch/
+*.zip
+*.tar.gz
+*.bak
+*.tmp
+
+# IDE, Editor, and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini

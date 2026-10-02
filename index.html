@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="author" content="mdanas-git">
+    <meta name="build-signature" content="bWRhbmFzLWdpdA==">
+    <meta name="description" content="ParkSense — Smart IoT Parking System with live sensor monitoring, real-time reservations, and role-based management.">
+    <title>ParkSense — Smart Parking System</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-core-sig="6d64616e61732d676974">
+    <header class="site-header">
+        <div class="header-brand">
+            <div class="brand-mark">
+                <img src="parksense-logo-white.png" alt="ParkSense logo">
+            </div>
+            <h1>ParkSense</h1>
+        </div>
+
+        <div class="header-controls">
+            <!-- Theme toggle button -->
+            <button
+                id="themeToggle"
+                class="theme-toggle"
+                type="button"
+                aria-label="Switch to dark mode"
+                title="Switch to dark mode"
+            >
+                <!-- Moon: shown in light mode -->
+                <svg class="moon-icon" viewBox="0 0 24 24"
+                     width="21" height="21" fill="none"
+                     stroke="currentColor" stroke-width="1.8"
+                     stroke-linecap="round" stroke-linejoin="round"
+                     aria-hidden="true">
+                    <path d="M20.9 13A9 9 0 0 1 11 3.1
+                             9 9 0 1 0 20.9 13Z"/>
+                </svg>
+
+                <!-- Sun: shown in dark mode -->
+                <svg class="sun-icon" viewBox="0 0 24 24"
+                     width="21" height="21" fill="none"
+                     stroke="currentColor" stroke-width="1.8"
+                     stroke-linecap="round" stroke-linejoin="round"
+                     aria-hidden="true">
+                    <circle cx="12" cy="12" r="4"/>
+                    <path d="M12 2v2 M12 20v2 M4.93 4.93l1.42 1.42
+                             M17.65 17.65l1.42 1.42 M2 12h2 M20 12h2
+                             M4.93 19.07l1.42-1.42
+                             M17.65 6.35l1.42-1.42"/>
+                </svg>
+            </button>
+
+            <!-- Three-line hamburger menu toggle for authenticated users -->
+            <button
+                id="menuToggle"
+                class="menu-toggle"
+                type="button"
+                aria-label="Open application menu"
+                title="Account & Settings menu"
+                hidden
+            >
+                <svg class="hamburger-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <line x1="3" y1="6" x2="21" y2="6"/>
+                    <line x1="3" y1="12" x2="21" y2="12"/>
+                    <line x1="3" y1="18" x2="21" y2="18"/>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <main>
+    <!-- Landing screen: approved and locked -->
+    <section id="landingScreen">
+        <div class="landing-hero">
+            <span class="hero-eyebrow">SMARTER PARKING STARTS HERE</span>
+            <h2>Find Your Parking Spot</h2>
+            <p>Discover a simpler way to find and manage parking with ParkSense.</p>
+            <button id="startBtn" class="primary-cta" type="button">
+                <span>Start with ParkSense</span>
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                     stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5 12h14M13 6l6 6-6 6"/>
+                </svg>
+            </button>
+        </div>
+<!-- Core Features -->
+<section class="core-features">
+    <div class="features-heading">
+        <span class="section-label">WHAT YOU CAN DO</span>
+        <h2>Core Features</h2>
+        <p>Everything you need to find and manage parking, in one place.</p>
+    </div>
+
+    <div class="features-grid">
+
+        <div class="feature-card">
+            <div class="feature-icon">◉</div>
+            <h3>Live Parking Status</h3>
+            <p>View parking slot information and check availability
+               when the system is connected.</p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">✦</div>
+            <h3>ParkSense Assistant</h3>
+            <p>Get instant guidance on slot availability, active
+               reservations, and parking facility rules.</p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">◷</div>
+            <h3>Quick Reservations</h3>
+            <p>Reserve an available parking slot for five minutes
+               and manage or cancel your reservation.</p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">☆</div>
+            <h3>Saved Locations</h3>
+            <p>Save your preferred parking locations for
+               convenient access whenever you need them.</p>
+        </div>
+
+    </div>
+</section>
+    </section>
+
+    <!-- Login and signup screen -->
+    <section id="authScreen" class="auth-section" hidden>
+        <div id="authToast" class="auth-toast" role="alert" aria-live="polite" aria-atomic="true"></div>
+
+        <div class="auth-container">
+            <div class="auth-header-bar">
+                <button id="backFromAuthBtn" class="auth-back-btn" type="button" aria-label="Back to home" title="Back to home">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                </button>
+            </div>
+
+            <p id="authMessage" class="auth-feedback" role="status"></p>
+
+            <h2 id="authHeading">Welcome Back</h2>
+            <p class="auth-subtitle">Log in or create your ParkSense account.</p>
+
+            <div class="auth-toggle-group">
+                <button id="showLoginBtn" type="button">Log In</button>
+                <button id="showSignupBtn" class="secondary-btn" type="button">Sign Up</button>
+            </div>
+
+            <!-- Login form -->
+            <form id="loginForm" class="auth-form">
+                <label for="loginEmail">Email address</label>
+                <input
+                    type="email"
+                    id="loginEmail"
+                    placeholder="you@example.com"
+                    required
+                >
+
+                <label for="loginPassword">Password</label>
+                <input
+                    type="password"
+                    id="loginPassword"
+                    placeholder="Enter your password"
+                    required
+                >
+
+                <button type="submit">Log In</button>
+            </form>
+
+            <!-- Signup form -->
+            <form id="signupForm" class="auth-form" hidden>
+                <label for="signupName">Full name</label>
+                <input
+                    type="text"
+                    id="signupName"
+                    placeholder="Your name"
+                    required
+                >
+
+                <label for="signupEmail">Email address</label>
+                <input
+                    type="email"
+                    id="signupEmail"
+                    placeholder="you@example.com"
+                    required
+                >
+
+                <label for="signupPassword">Create password</label>
+                <input
+                    type="password"
+                    id="signupPassword"
+                    placeholder="At least 8 characters"
+                    minlength="8"
+                    required
+                >
+
+                <button type="submit">Create Account</button>
+            </form>
+        </div>
+    </section>
+
+    <!-- Main Authenticated Interface: Locations, Saved Locations, Add New Location -->
+    <section id="locationsScreen" class="app-screen" hidden>
+        <!-- Global active reservation banner if user holds a reservation -->
+        <div id="globalResBanner" class="active-res-banner" hidden>
+            <div class="res-banner-content">
+                <span class="res-badge">ACTIVE RESERVATION</span>
+                <span id="globalResText" class="res-text">Slot S1 at UIT Parking reserved</span>
+                <div class="res-timer-wrap">
+                    Expires in: <strong id="globalResTimer">05:00</strong>
+                </div>
+            </div>
+            <div class="res-banner-actions">
+                <button id="globalResViewBtn" class="res-view-btn" type="button">View Dashboard</button>
+                <button id="globalResCancelBtn" class="res-cancel-btn" type="button">Cancel</button>
+            </div>
+        </div>
+
+        <!-- 3-tab navigation bar -->
+        <nav class="app-nav-bar" aria-label="Main application sections">
+            <button id="navLocationsBtn" class="app-nav-tab active" type="button">Locations</button>
+            <button id="navSavedLocationsBtn" class="app-nav-tab" type="button">Saved Locations</button>
+            <button id="navAddLocationBtn" class="app-nav-tab" type="button">Add New Location</button>
+        </nav>
+
+        <!-- View 1: Locations Tab -->
+        <div id="locationsTabView" class="tab-view-content">
+            <div class="view-header">
+                <h2>Parking Locations</h2>
+                <p>Select a parking location to view live slot status and reserve a spot.</p>
+            </div>
+            <div id="locationsListContainer" class="locations-list" role="feed" aria-busy="false">
+                <!-- Location cards rendered dynamically -->
+            </div>
+        </div>
+
+        <!-- View 2: Saved Locations Tab -->
+        <div id="savedLocationsTabView" class="tab-view-content" hidden>
+            <div class="view-header">
+                <h2>Saved Locations</h2>
+                <p>Quick access to your bookmarked parking locations.</p>
+            </div>
+            <div id="savedLocationsListContainer" class="locations-list" role="feed" aria-busy="false">
+                <!-- Saved location cards rendered dynamically -->
+            </div>
+        </div>
+
+        <!-- View 3: Add New Location Tab -->
+        <div id="addLocationTabView" class="tab-view-content" hidden>
+            <div class="view-header">
+                <h2>Add New Parking Location</h2>
+                <p>Register or propose a parking facility for monitoring.</p>
+            </div>
+
+            <!-- Role explanation banner -->
+            <div id="facilityRoleNotice" class="facility-notice">
+                <strong id="roleNoticeTitle">Facility Notice</strong>
+                <p id="roleNoticeBody">Standard members may propose parking locations for operator review. Verified operators and administrators publish facilities directly.</p>
+            </div>
+
+            <form id="addLocationForm" class="auth-form location-form">
+                <label for="newLocName">Location Name</label>
+                <input type="text" id="newLocName" placeholder="e.g. Science Block Parking" required>
+
+                <label for="newLocAddress">Full Facility Address</label>
+                <input type="text" id="newLocAddress" placeholder="e.g. Civil Lines, Block C, Prayagraj" required>
+
+                <label for="newLocSlots">Total Monitored Slots (1–20)</label>
+                <input type="number" id="newLocSlots" min="1" max="20" value="4" required>
+
+                <button id="submitLocationBtn" type="submit">Submit Facility Proposal</button>
+                <p id="addLocationMessage" class="form-feedback" role="status"></p>
+            </form>
+        </div>
+    </section>
+
+    <!-- Parking dashboard: UIT Parking or any selected location -->
+    <section id="parkingScreen" class="parking-dashboard" hidden>
+        <div class="dashboard-top-bar">
+            <button id="backToLocationsBtn" class="dash-icon-btn back-button" type="button" aria-label="Back to Locations" title="Back to Locations">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+            </button>
+            <div class="dash-top-actions">
+                <button id="adminDeleteLocationBtn" class="dash-admin-delete-btn" type="button" title="Delete this location (Admin only)" hidden>
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                    <span>Delete Location</span>
+                </button>
+                <button id="refreshDashboardBtn" class="dash-icon-btn refresh-button" type="button" aria-label="Refresh status" title="Refresh live status">
+                    <svg class="refresh-icon" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <polyline points="1 20 1 14 7 14"></polyline>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Active reservation alert inside dashboard -->
+        <div id="dashActiveResCard" class="dash-res-card" hidden>
+            <div class="dash-res-info">
+                <span class="res-badge">YOUR RESERVATION</span>
+                <h4 id="dashResTitle">Slot S1 is reserved for you</h4>
+                <p>Please arrive and occupy the slot before the timer expires.</p>
+            </div>
+            <div class="dash-res-timer-box">
+                <span class="timer-label">Time Remaining</span>
+                <strong id="dashResCountdown" class="timer-digits">05:00</strong>
+                <button id="dashCancelResBtn" class="res-cancel-btn" type="button">Cancel Reservation</button>
+            </div>
+        </div>
+
+        <div class="parking-heading">
+            <div class="parking-heading-main">
+                <span class="eyebrow">PARKING LOCATION</span>
+                <h2 id="dashboardLocName">UIT Parking</h2>
+                <p id="dashboardLocAddress">United Institute of Technology, Prayagraj</p>
+            </div>
+            <div class="parking-heading-meta">
+                <span id="dashboardStatusPill" class="status-pill offline">Connection pending</span>
+                <p id="dashboardLastUpdate" class="sensor-time">Sensor offline • Connection pending</p>
+            </div>
+        </div>
+
+        <section class="dashboard-panel" aria-labelledby="parkingStatusHeading">
+            <div class="panel-heading">
+                <h3 id="parkingStatusHeading">Parking Status</h3>
+                <p id="parkingStatusSubtext">Slot information will appear when the system connects.</p>
+            </div>
+            <div class="summary-grid">
+                <div class="summary-card"><span>Total slots</span><strong id="dashTotalSlots">4</strong></div>
+                <div class="summary-card"><span>Available</span><strong id="dashAvailSlots" aria-label="Available slots">—</strong></div>
+                <div class="summary-card"><span>Occupied</span><strong id="dashOccupiedSlots" aria-label="Occupied slots">—</strong></div>
+                <div class="summary-card"><span>Reserved</span><strong id="dashReservedSlots" aria-label="Reserved slots">—</strong></div>
+                <div class="summary-card"><span>Unknown / Offline</span><strong id="dashUnknownSlots" aria-label="Unknown slots">4</strong></div>
+            </div>
+            <div class="recommendation-row">
+                <div class="rec-label-wrap">
+                    <span class="rec-icon">⌖</span>
+                    <span class="rec-label">Recommended Slot</span>
+                </div>
+                <div id="dashRecommendedSlot" class="rec-value">
+                    <span class="rec-badge unavailable">Not available</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="dashboard-panel" aria-labelledby="parkingSlotsHeading">
+            <div class="slots-panel-heading">
+                <div>
+                    <h3 id="parkingSlotsHeading">Parking Slots</h3>
+                    <p id="dashSlotCountSubtitle">4 slots at this location</p>
+                </div>
+                <span id="dashSlotsStatePill" class="status-pill offline">Status unknown</span>
+            </div>
+            <div id="dashboardSlotGrid" class="dashboard-slot-grid">
+                <!-- Slot cards rendered dynamically with S1-S4 initial placeholders -->
+                <article class="dashboard-slot">
+                    <div class="slot-left">
+                        <div class="slot-label" aria-hidden="true">S1</div>
+                        <div class="slot-details">
+                            <h4>Slot 1</h4>
+                        </div>
+                    </div>
+                    <div class="slot-right">
+                        <span class="slot-status status-unknown">UNKNOWN</span>
+                    </div>
+                </article>
+                <article class="dashboard-slot">
+                    <div class="slot-left">
+                        <div class="slot-label" aria-hidden="true">S2</div>
+                        <div class="slot-details">
+                            <h4>Slot 2</h4>
+                        </div>
+                    </div>
+                    <div class="slot-right">
+                        <span class="slot-status status-unknown">UNKNOWN</span>
+                    </div>
+                </article>
+                <article class="dashboard-slot">
+                    <div class="slot-left">
+                        <div class="slot-label" aria-hidden="true">S3</div>
+                        <div class="slot-details">
+                            <h4>Slot 3</h4>
+                        </div>
+                    </div>
+                    <div class="slot-right">
+                        <span class="slot-status status-unknown">UNKNOWN</span>
+                    </div>
+                </article>
+                <article class="dashboard-slot">
+                    <div class="slot-left">
+                        <div class="slot-label" aria-hidden="true">S4</div>
+                        <div class="slot-details">
+                            <h4>Slot 4</h4>
+                        </div>
+                    </div>
+                    <div class="slot-right">
+                        <span class="slot-status status-unknown">UNKNOWN</span>
+                    </div>
+                </article>
+            </div>
+        </section>
+        <div id="dashNoticeText" class="dashboard-notice">Availability and reservations will be enabled after the parking sensors and backend are connected.</div>
+    </section>
+    </main>
+
+    <!-- Slide-over Three-Line Menu Drawer -->
+    <div id="drawerBackdrop" class="drawer-backdrop" hidden></div>
+    <aside id="appMenuDrawer" class="app-drawer" aria-label="Account and Settings" hidden>
+        <div class="drawer-header">
+            <div>
+                <h3>ParkSense Account</h3>
+                <p id="drawerUserGreeting" class="drawer-sub">Signed in</p>
+            </div>
+            <button id="closeDrawerBtn" class="drawer-close-btn" type="button" aria-label="Close menu">&times;</button>
+        </div>
+
+        <div class="drawer-nav-tabs">
+            <button id="drawerTabSettingsBtn" class="drawer-tab active" type="button">Settings</button>
+            <button id="drawerTabProfileBtn" class="drawer-tab" type="button">Profile & Data</button>
+            <button id="drawerTabPrivacyBtn" class="drawer-tab" type="button">Privacy</button>
+            <button id="drawerTabLocationLogsBtn" class="drawer-tab" type="button" hidden>Location Logs</button>
+            <button id="drawerTabAdminBtn" class="drawer-tab" type="button" hidden>Admin Settings</button>
+        </div>
+
+        <div class="drawer-body">
+            <!-- Section A: Settings -->
+            <section id="drawerSettingsView" class="drawer-pane">
+                <div class="settings-group">
+                    <h4>Appearance & Preferences</h4>
+                    <div class="setting-item">
+                        <div>
+                            <strong>Dark Mode</strong>
+                            <p>Toggle high-contrast theme</p>
+                        </div>
+                        <button id="drawerThemeToggleBtn" class="secondary-btn" type="button">Toggle Theme</button>
+                    </div>
+                    <div class="setting-item">
+                        <div>
+                            <strong>Reservation Alerts</strong>
+                            <p>Show on-screen reminder 1 min before expiry</p>
+                        </div>
+                        <input type="checkbox" id="prefAlerts" checked>
+                    </div>
+                </div>
+
+                <div class="settings-group">
+                    <h4>Account Security</h4>
+                    <form id="changePasswordForm" class="drawer-form">
+                        <label for="currPassword">Current Password</label>
+                        <input type="password" id="currPassword" required>
+
+                        <label for="newPassword">New Password (min 8 chars)</label>
+                        <input type="password" id="newPassword" minlength="8" required>
+
+                        <button type="submit" class="secondary-btn">Update Password</button>
+                        <p id="changePasswordMsg" class="form-feedback"></p>
+                    </form>
+                </div>
+
+                <div class="settings-group">
+                    <h4>Session</h4>
+                    <button id="logoutBtn" class="danger-btn" type="button">Log Out</button>
+                </div>
+            </section>
+
+            <!-- Section B: Profile & Data -->
+            <section id="drawerProfileView" class="drawer-pane" hidden>
+                <form id="profileForm" class="drawer-form">
+                    <h4>Personal Details</h4>
+                    <label for="profileName">Full Name</label>
+                    <input type="text" id="profileName" required>
+
+                    <label for="profileEmail">Email Address (Read-only)</label>
+                    <input type="email" id="profileEmail" readonly disabled>
+
+                    <label for="profilePhone">Phone Number</label>
+                    <input type="tel" id="profilePhone" placeholder="+91 9876543210">
+
+                    <h4>Vehicle Information</h4>
+                    <label for="profileVehicleName">Vehicle Make & Model</label>
+                    <input type="text" id="profileVehicleName" placeholder="e.g. Honda City / Pulsar 150">
+
+                    <label for="profileVehicleReg">Vehicle Registration Number</label>
+                    <input type="text" id="profileVehicleReg" placeholder="e.g. UP 70 AB 1234">
+
+                    <button type="submit">Save Profile Changes</button>
+                    <p id="profileFormMsg" class="form-feedback"></p>
+                </form>
+
+                <div class="settings-group">
+                    <h4>Personal Data & Danger Zone</h4>
+                    <p class="drawer-hint">Permanently delete your user account, vehicle data, and personal records from ParkSense.</p>
+                    <button id="deleteAccountTriggerBtn" class="danger-btn" type="button">Delete My Account</button>
+                </div>
+            </section>
+
+            <!-- Section C: Privacy -->
+            <section id="drawerPrivacyView" class="drawer-pane" hidden>
+                <div class="privacy-content">
+                    <h4>Privacy & Data Protection</h4>
+                    <p>ParkSense values your privacy and ensures minimal, secure data collection for smart parking.</p>
+
+                    <h5>1. What We Store</h5>
+                    <ul>
+                        <li><strong>Account Data:</strong> Name, verified email address, encrypted password hash, and user role.</li>
+                        <li><strong>Vehicle Data:</strong> Optional vehicle description and plate registration number for parking authorization.</li>
+                        <li><strong>Saved Locations:</strong> Your bookmarked parking facilities for quick navigation.</li>
+                        <li><strong>Reservation Logs:</strong> Timestamps and slot identifiers for active and historical reservations.</li>
+                    </ul>
+
+                    <h5>2. Public Anonymity Guarantee</h5>
+                    <p>When you reserve or park in a slot, other parkers and public viewers only see the slot status (e.g., <em>RESERVED</em> or <em>OCCUPIED</em>). <strong>Your personal identity, contact number, and vehicle registration are never displayed publicly.</strong></p>
+
+                    <h5>3. Real Hardware Rules</h5>
+                    <p>Physical occupancy measured by ESP32 ultrasonic sensors always overrides reservations. If a car parks in a reserved spot, the reservation is automatically closed.</p>
+
+                    <h5>4. Data Rights & Deletion</h5>
+                    <p>You can export or delete your profile and personal data at any time via the <em>Profile & Data</em> tab.</p>
+                </div>
+            </section>
+
+            <!-- Section D: Admin Settings & Logs (Admin Only) -->
+            <section id="drawerAdminView" class="drawer-pane" hidden>
+                <div class="settings-group">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <h4 style="margin: 0;">User Accounts & Passwords</h4>
+                        <button id="refreshAdminUsersBtn" class="secondary-btn" type="button" style="padding: 3px 8px; font-size: 0.75rem;">Refresh</button>
+                    </div>
+                    <p class="drawer-hint">Manage user privileges, assign roles (Admin/Editor/User), view passwords, and suspend accounts.</p>
+                    <div class="admin-table-wrap">
+                        <table class="admin-table" id="adminUsersTable">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th>Password</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminUsersListBody">
+                                <tr><td colspan="5" style="text-align:center; opacity:0.6;">Loading users...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="settings-group">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <h4 style="margin: 0;">Admin Logs & Activity</h4>
+                        <button id="refreshAdminLoginsBtn" class="secondary-btn" type="button" style="padding: 3px 8px; font-size: 0.75rem;">Refresh</button>
+                    </div>
+                    <p class="drawer-hint">Audit real-time authentication events, timestamps, and security logs.</p>
+                    <div class="admin-table-wrap">
+                        <table class="admin-table" id="adminLoginsTable">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Account</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminLoginsListBody">
+                                <tr><td colspan="3" style="text-align:center; opacity:0.6;">Loading admin logs...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section E: Location Proposals & Logs (Admin & Editor) -->
+            <section id="drawerLocationLogsView" class="drawer-pane" hidden>
+                <div class="settings-group">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <h4 style="margin: 0;">Location Proposals & Logs</h4>
+                        <button id="refreshLocationLogsBtn" class="secondary-btn" type="button" style="padding: 3px 8px; font-size: 0.75rem;">Refresh</button>
+                    </div>
+                    <p class="drawer-hint">Review parking facilities and approve community location requests.</p>
+                    <div class="admin-table-wrap">
+                        <table class="admin-table" id="locationLogsTable">
+                            <thead>
+                                <tr>
+                                    <th>Location</th>
+                                    <th>Slots</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="locationLogsListBody">
+                                <tr><td colspan="4" style="text-align:center; opacity:0.6;">Loading location logs...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </aside>
+
+    <!-- Reservation Confirmation Modal Dialog -->
+    <div id="reserveModalBackdrop" class="modal-backdrop" hidden>
+        <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="reserveModalTitle">
+            <h3 id="reserveModalTitle">Confirm 5-Minute Reservation</h3>
+            <p id="reserveModalText">Reserve Slot S1 at UIT Parking for 5 minutes?</p>
+            <div class="modal-rules-box">
+                <ul>
+                    <li>You have <strong>5 minutes</strong> to arrive and park.</li>
+                    <li>When your vehicle is physically detected by the sensor, your reservation completes.</li>
+                    <li>If you do not arrive within 5 minutes, the slot automatically releases.</li>
+                </ul>
+            </div>
+            <div class="modal-actions">
+                <button id="confirmReserveBtn" type="button">Confirm Reservation</button>
+                <button id="cancelReserveModalBtn" class="secondary-btn" type="button">Cancel</button>
+            </div>
+            <p id="reserveModalFeedback" class="form-feedback"></p>
+        </div>
+    </div>
+
+    <!-- Account Deletion Confirmation Modal -->
+    <div id="deleteModalBackdrop" class="modal-backdrop" hidden>
+        <div class="modal-box modal-danger" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle">
+            <h3 id="deleteModalTitle">Delete Account & Data</h3>
+            <p>Are you sure you want to permanently delete your ParkSense account? This action cannot be undone.</p>
+            <p class="modal-warning">All active reservations, saved locations, and profile records will be purged immediately from the database.</p>
+            <div class="modal-actions">
+                <button id="confirmDeleteAccountBtn" class="danger-btn" type="button">Yes, Delete Everything</button>
+                <button id="cancelDeleteModalBtn" class="secondary-btn" type="button">Keep Account</button>
+            </div>
+            <p id="deleteModalFeedback" class="form-feedback"></p>
+        </div>
+    </div>
+
+    <!-- ParkSense Offline AI Assistant Widget & Floating Action Button -->
+    <div id="assistantWidgetContainer" class="assistant-widget-container" hidden>
+        <!-- Floating Action Button (FAB) -->
+        <button id="assistantFabBtn" class="assistant-fab-btn" type="button" aria-label="Open ParkSense Assistant" title="ParkSense Assistant">
+            <span class="assistant-fab-icon">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <!-- Symmetrical Chat Bubble -->
+                    <path d="M4 4h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-5l-3 3-3-3H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/>
+                    <circle cx="8" cy="10" r="1.25" fill="currentColor"/>
+                    <circle cx="12" cy="10" r="1.25" fill="currentColor"/>
+                    <circle cx="16" cy="10" r="1.25" fill="currentColor"/>
+                </svg>
+            </span>
+            <span class="assistant-fab-ping" aria-hidden="true"></span>
+        </button>
+
+        <!-- Floating Chat Panel -->
+        <section id="assistantChatPanel" class="assistant-chat-panel" role="region" aria-label="ParkSense Assistant Chat" hidden>
+            <div class="assistant-header">
+                <div class="assistant-title-group">
+                    <div class="assistant-avatar" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M4 4h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-5l-3 3-3-3H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/>
+                            <circle cx="8" cy="10" r="1.25" fill="currentColor"/>
+                            <circle cx="12" cy="10" r="1.25" fill="currentColor"/>
+                            <circle cx="16" cy="10" r="1.25" fill="currentColor"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h4 class="assistant-name">ParkSense Assistant</h4>
+                        <div class="assistant-status-row">
+                            <span class="assistant-pulse-dot" aria-hidden="true"></span>
+                            <span id="assistantEngineBadge" class="assistant-engine-label">ParkSense Assistant</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="assistant-header-actions">
+                    <button id="assistantClearBtn" class="assistant-tool-btn" type="button" title="Clear chat history" aria-label="Clear chat history">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"/>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                        </svg>
+                    </button>
+                    <button id="assistantCloseBtn" class="assistant-tool-btn" type="button" title="Close assistant" aria-label="Close assistant">
+                        &times;
+                    </button>
+                </div>
+            </div>
+
+            <!-- Messages Transcript -->
+            <div id="assistantMessages" class="assistant-messages" role="log" aria-live="polite">
+                <!-- Dynamically populated messages -->
+            </div>
+
+            <!-- Quick Suggestions Bar with Slide Controls -->
+            <div class="assistant-suggestions-wrapper">
+                <button id="suggestionsSlideLeft" class="suggestions-arrow-btn left" type="button" title="Slide prompts left" aria-label="Slide prompts left">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                </button>
+                <div id="assistantSuggestionsBar" class="assistant-suggestions" aria-label="Suggested quick questions" tabindex="0">
+                    <!-- Dynamically populated chips -->
+                </div>
+                <button id="suggestionsSlideRight" class="suggestions-arrow-btn right" type="button" title="Slide prompts right" aria-label="Slide prompts right">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Chat Input Form -->
+            <form id="assistantInputForm" class="assistant-input-form">
+                <input
+                    type="text"
+                    id="assistantQueryInput"
+                    class="assistant-input"
+                    placeholder="Ask about slots, reservations, rules..."
+                    autocomplete="off"
+                    required
+                />
+                <button id="assistantSendBtn" class="assistant-send-btn" type="submit" aria-label="Send query">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <line x1="22" y1="2" x2="11" y2="13"/>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                    </svg>
+                </button>
+            </form>
+        </section>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
