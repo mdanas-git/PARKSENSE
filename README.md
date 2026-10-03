@@ -32,11 +32,11 @@ Whether you're a driver looking for an open spot, a facility operator reviewing 
 
 ```text
  ┌─────────────────────────────────────────────────────────┐
- │               ESP32 Edge Node (Wokwi / Real)            │
+ │               ESP32 Edge Node (Wokwi / Real)           │
  │  • 4x HC-SR04 Slot Sensors   • 74HC595 LED Shift Reg   │
  │  • Entry/Exit Gate Sensors   • SG90 Barrier Servo      │
  │  • SSD1306 OLED Display      • MicroPython Controller  │
- └────────────────────────────┬────────────────────────────┘
+ └────────────────────────┬────────────────────────────────┘
                               │
                HTTPS / JSON   │ Telemetry Stream (Every 2.5s)
                Reservation    │ Sync (Active Holds & LEDs)
@@ -46,7 +46,7 @@ Whether you're a driver looking for an open spot, a facility operator reviewing 
  │  • RESTful Endpoints         • SQLite Data Persistence  │
  │  • Role-Based Access (RBAC)  • Fail-Safe Stale Engine   │
  │  • Sliding-Window Security   • Context-Aware AI Engine  │
- └────────────────────────────┬────────────────────────────┘
+ └────────────────────────┬────────────────────────────────┘
                               │
                Live Web UI    │ REST & Assistant API
                               ▼
