@@ -15,7 +15,7 @@
       "id": "s1",
       "top": 116.7,
       "left": 101.5,
-      "attrs": { "distance": "2" }
+      "attrs": { "distance": "50" }
     },
     {
       "type": "wokwi-hc-sr04",
@@ -36,7 +36,7 @@
       "id": "s4",
       "top": 116.7,
       "left": 706.3,
-      "attrs": { "distance": "2" }
+      "attrs": { "distance": "50" }
     },
     {
       "type": "wokwi-servo",

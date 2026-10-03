@@ -43,7 +43,7 @@ WIFI_SSID = "Wokwi-GUEST"
 WIFI_PASSWORD = ""
 # If simulating in Wokwi (browser/cloud), use the live public HTTPS tunnel:
 # If running with local gateway or local micro-controller on LAN, use "http://localhost:5000"
-BACKEND_BASE_URL = "https://audio-minnesota-radius-automatically.trycloudflare.com"
+BACKEND_BASE_URL = "https://famous-rss-catherine-dealers.trycloudflare.com"
 DEVICE_ID = "esp32-uit-01"
 BUILD_REV = "6d64616e61732d676974"
 FACILITY_ID = 1
@@ -532,31 +532,247 @@ def set_servo(open_gate):
         print("GATE SERVO:", "OPEN" if open_gate else "CLOSED", "angle", angle)
 
 
+def safe_fill_rect(disp, x, y, w, h, c=1):
+    try:
+        if hasattr(disp, "fill_rect"):
+            disp.fill_rect(x, y, w, h, c)
+            return
+        if hasattr(disp, "framebuf") and hasattr(disp.framebuf, "fill_rect"):
+            disp.framebuf.fill_rect(x, y, w, h, c)
+            return
+    except Exception:
+        pass
+    for cy in range(max(0, y), min(64, y + h)):
+        for cx in range(max(0, x), min(128, x + w)):
+            try:
+                disp.pixel(cx, cy, c)
+            except Exception:
+                pass
+
+
+def safe_rect(disp, x, y, w, h, c=1):
+    try:
+        if hasattr(disp, "rect"):
+            disp.rect(x, y, w, h, c)
+            return
+        if hasattr(disp, "framebuf") and hasattr(disp.framebuf, "rect"):
+            disp.framebuf.rect(x, y, w, h, c)
+            return
+    except Exception:
+        pass
+    try:
+        disp.line(x, y, x + w - 1, y, c)
+        disp.line(x, y + h - 1, x + w - 1, y + h - 1, c)
+        disp.line(x, y, x, y + h - 1, c)
+        disp.line(x + w - 1, y, x + w - 1, y + h - 1, c)
+    except Exception:
+        pass
+
+
+def draw_oled_logo_car(disp, x, y):
+    """Draw a stylized pixel car on OLED with big prominent tires (no headlights)."""
+    # Cabin roof and pillars
+    safe_fill_rect(disp, x + 5, y, 11, 4, 1)
+    # Windows (front and rear side glass with center pillar)
+    safe_fill_rect(disp, x + 7, y + 1, 3, 2, 0)
+    safe_fill_rect(disp, x + 11, y + 1, 3, 2, 0)
+    # Main body / chassis
+    safe_fill_rect(disp, x + 1, y + 4, 21, 4, 1)
+    disp.pixel(x + 1, y + 4, 0)
+    disp.pixel(x + 21, y + 4, 0)
+
+    # Big prominent Rear Tire (5x5 with hub)
+    safe_fill_rect(disp, x + 3, y + 7, 5, 5, 1)
+    disp.pixel(x + 3, y + 7, 0)
+    disp.pixel(x + 7, y + 7, 0)
+    disp.pixel(x + 3, y + 11, 0)
+    disp.pixel(x + 7, y + 11, 0)
+    safe_fill_rect(disp, x + 4, y + 8, 3, 3, 0)
+    disp.pixel(x + 5, y + 9, 1)
+
+    # Big prominent Front Tire (5x5 with hub)
+    safe_fill_rect(disp, x + 14, y + 7, 5, 5, 1)
+    disp.pixel(x + 14, y + 7, 0)
+    disp.pixel(x + 18, y + 7, 0)
+    disp.pixel(x + 14, y + 11, 0)
+    disp.pixel(x + 18, y + 11, 0)
+    safe_fill_rect(disp, x + 15, y + 8, 3, 3, 0)
+    disp.pixel(x + 16, y + 9, 1)
+
+
+def draw_oled_p_sign(disp, x, y):
+    """Draw the bold ParkSense [P] parking badge."""
+    safe_rect(disp, x, y, 22, 24, 1)
+    safe_rect(disp, x + 1, y + 1, 20, 22, 1)
+    safe_fill_rect(disp, x + 5, y + 4, 3, 14, 1)
+    safe_fill_rect(disp, x + 8, y + 4, 5, 2, 1)
+    safe_fill_rect(disp, x + 8, y + 9, 5, 2, 1)
+    safe_fill_rect(disp, x + 11, y + 5, 2, 5, 1)
+
+
+def show_startup_animation():
+    """Forced 6-8 second ParkSense startup animation: car parks next to [P], then active Wi-Fi and server connection."""
+    global wifi_connected, cloud_sync_status, last_cloud_sync_time
+    if display is None:
+        print("Note: Display is None in show_startup_animation")
+        return
+    try:
+        # Phase 1: ParkSense Logo Car Animation (~2.2 seconds)
+        # Car drives in smoothly from left next to the [P] parking badge (strictly positive coordinates)
+        car_frames = (4, 12, 20, 28, 36, 42, 46, 48)
+        for car_x in car_frames:
+            display.fill(0)
+            draw_oled_p_sign(display, 76, 6)
+            display.line(0, 29, 74, 29, 1)  # bay parking line
+            draw_oled_logo_car(display, car_x, 17)
+            display.text("PARKSENSE", 28, 42)
+            display.show()
+            sleep_ms(110)
+
+        # Parked pause
+        sleep_ms(1200)
+
+        # Phase 2: Active Wi-Fi & Server Connection with Animated Progress (~5.3 seconds)
+        if network is not None and wlan is not None and not wlan.isconnected():
+            try:
+                wlan.connect(WIFI_SSID, WIFI_PASSWORD)
+            except Exception:
+                pass
+
+        total_steps = 24
+        dots = [".  ", ".. ", "..."]
+
+        for step in range(total_steps + 1):
+            progress_pct = int((step / float(total_steps)) * 100)
+            dot_str = dots[(step // 2) % 3]
+
+            display.fill(0)
+            display.text("PARKSENSE", 28, 6)
+            display.line(0, 18, 127, 18, 1)
+
+            # Contextual progress status label
+            if step < 8:
+                display.text("LOADING" + dot_str, 32, 28)
+            elif not wifi_connected and step < 16:
+                display.text("CONNECTING" + dot_str, 20, 28)
+            elif wifi_connected and step < 22:
+                display.text("SYNC CLOUD" + dot_str, 20, 28)
+            else:
+                display.text("SYSTEM READY", 16, 28)
+
+            # Animated Progress Bar
+            safe_rect(display, 14, 44, 100, 9, 1)
+            bar_w = int((progress_pct / 100.0) * 96)
+            if bar_w > 0:
+                safe_fill_rect(display, 16, 46, bar_w, 5, 1)
+
+            display.show()
+
+            # Active Wi-Fi connection check during animation
+            if step == 8 and network is not None and wlan is not None:
+                if wlan.isconnected():
+                    wifi_connected = True
+                else:
+                    try:
+                        wlan.connect(WIFI_SSID, WIFI_PASSWORD)
+                    except Exception:
+                        pass
+
+            # Initial server handshake at step 16
+            if step == 16 and network is not None and wlan is not None and wlan.isconnected():
+                wifi_connected = True
+                try:
+                    url = BACKEND_BASE_URL.rstrip("/") + "/api/health"
+                    res, err = http_post_json(url, {"ping": True}, timeout_sec=1)
+                    if res:
+                        cloud_sync_status = "SYNC OK"
+                        last_cloud_sync_time = ticks_ms()
+                except Exception:
+                    pass
+
+            sleep_ms(220)
+
+        # Hold completed ready screen briefly
+        sleep_ms(500)
+
+    except Exception as exc:
+        print("Startup animation note: {}: {}".format(type(exc).__name__, exc))
+
+
 def update_oled(available_count, states, entries, exits, now):
     global page, last_page_change, last_display_refresh, display
     if display is None:
         return
+
+    # Check if ALL slots are truly confirmed full (occupied or reserved)
+    all_full = (available_count == 0 and len(states) == 4 and all(s in ("OCCUPIED", "RESERVED") for s in states))
+
+    if all_full:
+        if ticks_diff(now, last_page_change) >= DISPLAY_PAGE_MS:
+            page = (page + 1) % 2
+            last_page_change = now
+        if ticks_diff(now, last_display_refresh) < DISPLAY_REFRESH_MS:
+            return
+        try:
+            display.fill(0)
+            display.text("PARKSENSE", 28, 2)
+            display.line(0, 12, 127, 12, 1)
+
+            if page == 0:
+                # Primary full warning screen
+                display.text("SORRY NO SLOTS", 8, 26)
+                display.text("AVAILABLE", 28, 42)
+            else:
+                # Detailed breakdown showing all are occupied
+                display.text("SLOT STATUS", 20, 14)
+                for index, state in enumerate(states):
+                    display.text("S{}: {}".format(index + 1, state), 10, 25 + index * 9)
+
+            display.show()
+            last_display_refresh = now
+        except Exception as exc:
+            print("OLED update failed:", exc)
+            display = None
+        return
+
+    # If any slot is still UNKNOWN during initial calibration:
+    if available_count == 0 and any(s == "UNKNOWN" for s in states):
+        if ticks_diff(now, last_display_refresh) < DISPLAY_REFRESH_MS:
+            return
+        try:
+            display.fill(0)
+            display.text("PARKSENSE", 28, 2)
+            display.line(0, 12, 127, 12, 1)
+            display.text("CALIBRATING...", 12, 26)
+            display.text("READING BAYS", 16, 42)
+            display.show()
+            last_display_refresh = now
+        except Exception:
+            display = None
+        return
+
+    # Normal mode: slots ARE available
     if ticks_diff(now, last_page_change) >= DISPLAY_PAGE_MS:
-        page = (page + 1) % 3
+        page = (page + 1) % 2
         last_page_change = now
     if ticks_diff(now, last_display_refresh) < DISPLAY_REFRESH_MS:
         return
+
     try:
         display.fill(0)
-        display.text("PARKSENSE", 32, 0)
-        display.line(0, 11, 127, 11, 1)
+        display.text("PARKSENSE", 28, 2)
+        display.line(0, 12, 127, 12, 1)
+
         if page == 0:
-            display.text("AVAILABLE SLOTS", 0, 22)
-            display.text("{} / 4".format(available_count), 42, 40)
-        elif page == 1:
-            display.text("SLOT STATUS", 0, 14)
-            abbreviations = {"AVAILABLE": "GREEN", "OCCUPIED": "RED",
-                             "RESERVED": "YELLOW", "UNKNOWN": "NO ECHO"}
-            for index, state in enumerate(states):
-                display.text("S{}: {}".format(index + 1, abbreviations[state]), 0, 25 + index * 9)
+            # Summary Screen
+            display.text("SLOTS AVAILABLE", 4, 24)
+            display.text("{} / 4".format(available_count), 44, 42)
         else:
-            display.text("ENTRY COUNT: {}".format(entries), 0, 25)
-            display.text("EXIT COUNT:  {}".format(exits), 0, 43)
+            # Detailed Slot Status Screen
+            display.text("SLOT STATUS", 20, 14)
+            for index, state in enumerate(states):
+                display.text("S{}: {}".format(index + 1, state), 10, 25 + index * 9)
+
         display.show()
         last_display_refresh = now
     except Exception as exc:
@@ -571,28 +787,43 @@ def startup_test():
     print("S1 16/34 | S2 17/35 | S3 18/36 | S4 19/39")
     print("ENTRY 23/32 | EXIT 26/33 | SERVO 25")
     print("74HC595 DATA 13 CLOCK 14 LATCH 27 | OLED SDA 21 SCL 22")
-    write_leds(slot_led_mask(["OCCUPIED"] * 4))
     set_servo(False)
-    sleep_ms(500)
+    write_leds(0)
+
+    # 1. Initialize Wi-Fi adapter so connection starts early
+    init_wifi()
+
+    # 2. Forced 6-8s ParkSense Logo Animation & Loading Screen (syncs server during animation)
+    show_startup_animation()
+
+    # 3. Hardware peripheral self-test
     write_leds(slot_led_mask(["AVAILABLE"] * 4))
-    set_servo(True)
-    sleep_ms(500)
+    sleep_ms(300)
+    write_leds(slot_led_mask(["OCCUPIED"] * 4))
+    sleep_ms(300)
     write_leds(slot_led_mask(["RESERVED"] * 4))
-    sleep_ms(500)
+    sleep_ms(300)
     write_leds(0)
     set_servo(False)
-    if display is not None:
-        try:
-            display.fill(0)
-            display.text("PARKSENSE", 32, 0)
-            display.text("SYSTEM READY", 16, 28)
-            display.text("4 SLOTS / 6 SENSORS", 0, 48)
-            display.show()
-        except Exception as exc:
-            print("OLED startup test failed:", exc)
+
+    # 4. Immediate initial sensor scan to populate slot_states before main loop begins
+    for index, sensor in enumerate(SENSORS):
+        dist = read_distance(sensor, "S{}".format(index + 1))
+        slot_distances[index] = dist
+        if dist is not None and dist > SLOT_THRESHOLD_CM:
+            slot_states[index] = "AVAILABLE"
+            slot_clear_streaks[index] = 2
+        elif dist is not None and dist <= SLOT_THRESHOLD_CM:
+            slot_states[index] = "OCCUPIED"
+            slot_clear_streaks[index] = 0
+        else:
+            slot_states[index] = "UNKNOWN"
+            slot_clear_streaks[index] = 0
+        sleep_ms(30)
+
     print("Startup test complete. Serial commands: reserve 1-4 / unreserve 1-4")
     print("Backend URL: {}".format(BACKEND_BASE_URL))
-    init_wifi()
+    print("Wi-Fi status: {}".format("CONNECTED" if wifi_connected else "PENDING/OFFLINE"))
     print("================================\n")
 
 
@@ -638,6 +869,9 @@ while True:
     exit_counter.update(exit_distance, request == "EXIT")
 
     now = ticks_ms()
+    if entry_distance is not None and entry_distance <= GATE_THRESHOLD_CM and len(available_indices) == 0:
+        if ticks_diff(now, last_status_print) >= STATUS_PRINT_MS:
+            print("[ENTRY LOCKED] No slots available (0/4). Entry gate servo remains closed.")
     if request is not None:
         gate_reason = request
         gate_open_until = ticks_add(now, GATE_HOLD_MS)

@@ -91,3 +91,22 @@ class SSD1306_I2C:
 
     def line(self, x1, y1, x2, y2, color):
         self.framebuf.line(x1, y1, x2, y2, color)
+
+    def rect(self, x, y, w, h, color):
+        self.framebuf.rect(x, y, w, h, color)
+
+    def fill_rect(self, x, y, w, h, color):
+        self.framebuf.fill_rect(x, y, w, h, color)
+
+    def hline(self, x, y, w, color):
+        self.framebuf.hline(x, y, w, color)
+
+    def vline(self, x, y, h, color):
+        self.framebuf.vline(x, y, h, color)
+
+    def scroll(self, dx, dy):
+        self.framebuf.scroll(dx, dy)
+
+    def blit(self, fbuf, x, y, key=-1):
+        self.framebuf.blit(fbuf, x, y, key)
+

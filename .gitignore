@@ -17,13 +17,9 @@ ENV/
 env.bak/
 venv.bak/
 
-# Local SQLite Database & runtime state
-parksense.db
-backend/parksense.db
-*.db
-*.sqlite
-*.sqlite3
+# Local SQLite Database runtime journal / lock files
 *.db-journal
+*.sqlite-journal
 
 # Cloudflare Tunnel Binary & logs (large local binary)
 cloudflared.exe

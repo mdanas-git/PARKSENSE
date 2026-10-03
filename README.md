@@ -33,9 +33,9 @@ Whether you're a driver looking for an open spot, a facility operator reviewing 
 ```text
  ┌─────────────────────────────────────────────────────────┐
  │               ESP32 Edge Node (Wokwi / Real)            │
- │  • 4x HC-SR04 Slot Sensors   • 74HC595 LED Shift Reg    │
- │  • Entry/Exit Gate Sensors   • SG90 Barrier Servo       │
- │  • SSD1306 OLED Display      • MicroPython Controller   │
+ │  • 4x HC-SR04 Slot Sensors   • 74HC595 LED Shift Reg   │
+ │  • Entry/Exit Gate Sensors   • SG90 Barrier Servo      │
+ │  • SSD1306 OLED Display      • MicroPython Controller  │
  └────────────────────────────┬────────────────────────────┘
                               │
                HTTPS / JSON   │ Telemetry Stream (Every 2.5s)
@@ -122,7 +122,7 @@ pip install -r requirements.txt
 ### 3. Start the Backend Server
 ```bash
 # Option A: Run directly via Python
-python backend/backend.py
+python backend.py
 
 # Option B: Windows 1-Click Launcher
 START_BACKEND.bat
@@ -207,14 +207,14 @@ START_WOKWI_TUNNEL.bat
 ```
 This automatically invokes the Python tunnel runner and keeps the tunnel connection active.
 
-#### Option 2: Cross-Platform Python Runner (`tools/tunnel_runner.py`)
+#### Option 2: Cross-Platform Python Runner (`tunnel_runner.py`)
 Run the automated runner directly from your terminal:
 ```bash
-python tools/tunnel_runner.py
+python tunnel_runner.py
 ```
 
 > [!TIP]
-> **Automatic Firmware Synchronization:** `tunnel_runner.py` automatically detects the newly assigned Cloudflare HTTPS URL and updates `SERVER_URL` inside [`firmware/main.py`](firmware/main.py) for you! You never need to manually copy and paste tunnel URLs into your ESP32 code.
+> **Automatic Firmware Synchronization:** `tunnel_runner.py` automatically detects the newly assigned Cloudflare HTTPS URL and updates `BACKEND_BASE_URL` inside [`main.py`](main.py) for you! You never need to manually copy and paste tunnel URLs into your ESP32 code.
 
 #### Option 3: Direct Cloudflared CLI Command
 If you prefer running the `cloudflared` CLI command directly:
@@ -301,45 +301,28 @@ If you are wiring a physical breadboard or custom PCB, connect the components as
 
 ```text
 PARKSENSE/
-│
-├── backend/                  # 🐍 Backend API & Intelligence
-│   ├── backend.py            # Flask API, JWT auth, and IoT telemetry ingestion
-│   ├── assistant_engine.py   # Offline AI Assistant engine with context & intent matching
-│   ├── parksense.db          # SQLite database storage
-│   └── requirements.txt      # Python dependencies
-│
-├── frontend/                 # 🌐 Client Web Application
-│   ├── index.html            # Main single-page interface
-│   ├── script.js             # Client UI logic, live polling, and reactive state
-│   ├── style.css             # Responsive styling for desktop and mobile
-│   └── assets/               # Logos and static images
-│       └── parksense-logo-white.png
-│
-├── firmware/                 # ⚡ ESP32 MicroPython & Wokwi Circuit
-│   ├── main.py               # ESP32 main loop & HTTP telemetry client
-│   ├── parksense_logic.py    # Edge decision & shift register logic
-│   ├── hcsr04.py             # MicroPython driver for HC-SR04 ultrasonic sensors
-│   ├── servo.py              # MicroPython driver for SG90 servo motor
-│   ├── ssd1306.py            # MicroPython driver for I2C OLED display
-│   ├── diagram.json          # Complete Wokwi circuit schematic definition
-│   ├── wokwi-project.txt     # Wokwi project reference
-│   └── wokwi.toml            # Wokwi simulator configuration
-│
-├── tools/                    # 🛠️ Launchers & Automation
-│   ├── tunnel_runner.py      # Cloudflare tunnel automation & main.py sync
-│   ├── cloudflared.exe       # Cloudflare tunnel binary
-│   └── START_WOKWI_TUNNEL.bat# Tool batch launcher
-│
-├── tests/                    # 🧪 Automated Testing
-│   └── test_e2e_integration.py # 22-point comprehensive automated system test suite
-│
-├── START_BACKEND.bat         # 1-click Windows launcher for Flask backend
-├── START_WOKWI_TUNNEL.bat    # 1-click Windows launcher for Cloudflare tunnel
-├── wokwi.toml                # Root Wokwi configuration file
-├── requirements.txt          # Python package dependencies
-├── README.md                 # Project documentation and guide
-├── LICENSE                   # MIT License
-└── .gitignore                # Git ignore rules
+├── backend.py            # 🐍 Flask API, JWT auth, and IoT telemetry ingestion
+├── assistant_engine.py   # 🤖 Offline AI Assistant engine with context & intent matching
+├── parksense.db          # 💾 SQLite database storage
+├── index.html            # 🌐 Main single-page web interface
+├── script.js             # ⚡ Client UI logic, live polling, and reactive state
+├── style.css             # 🎨 Responsive styling for desktop and mobile
+├── parksense-logo-white.png # 🖼️ ParkSense brand logo
+├── main.py               # ⚡ ESP32 MicroPython main loop & telemetry client
+├── parksense_logic.py    # 🧠 Hardware edge logic & shift register bitmasks
+├── hcsr04.py             # 📡 MicroPython driver for HC-SR04 ultrasonic sensors
+├── servo.py              # ⚙️ MicroPython driver for SG90 servo motor
+├── ssd1306.py            # 📺 MicroPython driver for I2C OLED display
+├── diagram.json          # 🔌 Complete Wokwi circuit schematic definition
+├── wokwi-project.txt     # 📄 Wokwi project reference
+├── tunnel_runner.py      # ☁️ Cloudflare tunnel automation & main.py sync
+├── test_e2e_integration.py # 🧪 22-point comprehensive automated system test suite
+├── START_BACKEND.bat     # 🚀 1-click Windows launcher for Flask backend
+├── START_WOKWI_TUNNEL.bat# 🚀 1-click Windows launcher for Cloudflare tunnel
+├── requirements.txt      # 📦 Python dependencies
+├── README.md             # 📖 Project documentation and guide
+├── LICENSE               # ⚖️ MIT License
+└── .gitignore            # 🛡️ Git ignore rules
 ```
 
 ---
@@ -360,7 +343,7 @@ ParkSense includes an automated 22-point end-to-end integration test suite cover
 
 To run the full suite:
 ```bash
-python tests/test_e2e_integration.py
+python test_e2e_integration.py
 ```
 
 Expected result:
