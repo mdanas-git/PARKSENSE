@@ -10,7 +10,7 @@ import json
 from hcsr04 import HCSR04
 from servo import Servo
 from parksense_logic import (
-    SLOT_THRESHOLD_CM, GATE_THRESHOLD_CM, update_slot_state,
+    SLOT_THRESHOLD_CM, GATE_THRESHOLD_CM, valid_distance, update_slot_state,
     slot_led_mask, available_slot_indices, gate_request, PresenceCounter,
 )
 
@@ -43,7 +43,7 @@ WIFI_SSID = "Wokwi-GUEST"
 WIFI_PASSWORD = ""
 # If simulating in Wokwi (browser/cloud), use the live public HTTPS tunnel:
 # If running with local gateway or local micro-controller on LAN, use "http://localhost:5000"
-BACKEND_BASE_URL = "https://famous-rss-catherine-dealers.trycloudflare.com"
+BACKEND_BASE_URL = "https://hebrew-oldest-delicious-supplements.trycloudflare.com"
 DEVICE_ID = "esp32-uit-01"
 BUILD_REV = "6d64616e61732d676974"
 FACILITY_ID = 1
@@ -113,6 +113,7 @@ except Exception as exc:
 page = 0
 last_page_change = ticks_ms()
 last_display_refresh = 0
+last_entry_detected = False
 last_status_print = 0
 current_servo_angle = None
 gate_open_until = None
@@ -699,44 +700,38 @@ def show_startup_animation():
         print("Startup animation note: {}: {}".format(type(exc).__name__, exc))
 
 
-def update_oled(available_count, states, entries, exits, now):
-    global page, last_page_change, last_display_refresh, display
+def format_reservation_display(reserved_slots):
+    """Format reservation text for OLED display:
+    1 slot:  ['S1 is reserved']
+    2 slots: ['S1 , S2', 'are Reserved']
+    3 slots: ['S1 , S2 , S3', 'are Reserved']
+    4 slots: ['S1, S2, S3, S4', 'are Reserved']
+    """
+    if not reserved_slots:
+        return []
+    if len(reserved_slots) == 1:
+        return ["S{} is reserved".format(reserved_slots[0])]
+    elif len(reserved_slots) == 2:
+        return ["S{} , S{}".format(reserved_slots[0], reserved_slots[1]), "are Reserved"]
+    elif len(reserved_slots) == 3:
+        return ["S{} , S{} , S{}".format(reserved_slots[0], reserved_slots[1], reserved_slots[2]), "are Reserved"]
+    else:
+        return [", ".join("S{}".format(s) for s in reserved_slots), "are Reserved"]
+
+
+def update_oled(available_count, states, entries, exits, now, entry_distance=None):
+    global page, last_page_change, last_display_refresh, display, last_entry_detected
     if display is None:
         return
 
-    # Check if ALL slots are truly confirmed full (occupied or reserved)
-    all_full = (available_count == 0 and len(states) == 4 and all(s in ("OCCUPIED", "RESERVED") for s in states))
-
-    if all_full:
-        if ticks_diff(now, last_page_change) >= DISPLAY_PAGE_MS:
-            page = (page + 1) % 2
-            last_page_change = now
-        if ticks_diff(now, last_display_refresh) < DISPLAY_REFRESH_MS:
-            return
-        try:
-            display.fill(0)
-            display.text("PARKSENSE", 28, 2)
-            display.line(0, 12, 127, 12, 1)
-
-            if page == 0:
-                # Primary full warning screen
-                display.text("SORRY NO SLOTS", 8, 26)
-                display.text("AVAILABLE", 28, 42)
-            else:
-                # Detailed breakdown showing all are occupied
-                display.text("SLOT STATUS", 20, 14)
-                for index, state in enumerate(states):
-                    display.text("S{}: {}".format(index + 1, state), 10, 25 + index * 9)
-
-            display.show()
-            last_display_refresh = now
-        except Exception as exc:
-            print("OLED update failed:", exc)
-            display = None
-        return
+    # Check if ALL slots are confirmed full (every single slot is OCCUPIED)
+    all_occupied = (len(states) == 4 and all(s == "OCCUPIED" for s in states))
+    reserved_slots = [i + 1 for i, s in enumerate(states) if s == "RESERVED"]
+    reserved_count = len(reserved_slots)
+    entry_detected = (entry_distance is not None and valid_distance(entry_distance) and float(entry_distance) <= GATE_THRESHOLD_CM)
 
     # If any slot is still UNKNOWN during initial calibration:
-    if available_count == 0 and any(s == "UNKNOWN" for s in states):
+    if available_count == 0 and reserved_count == 0 and any(s == "UNKNOWN" for s in states):
         if ticks_diff(now, last_display_refresh) < DISPLAY_REFRESH_MS:
             return
         try:
@@ -751,32 +746,90 @@ def update_oled(available_count, states, entries, exits, now):
             display = None
         return
 
-    # Normal mode: slots ARE available
-    if ticks_diff(now, last_page_change) >= DISPLAY_PAGE_MS:
+    # Instant refresh on entry sensor transition (vehicle arrives or departs)
+    sensor_state_changed = (entry_detected != last_entry_detected)
+    if sensor_state_changed:
+        last_entry_detected = entry_detected
+        last_page_change = now
+    elif ticks_diff(now, last_display_refresh) < DISPLAY_REFRESH_MS:
+        return
+
+    # Rotate pages only when vehicle is not actively held at entrance sensor
+    if not entry_detected and ticks_diff(now, last_page_change) >= DISPLAY_PAGE_MS:
         page = (page + 1) % 2
         last_page_change = now
-    if ticks_diff(now, last_display_refresh) < DISPLAY_REFRESH_MS:
-        return
 
     try:
         display.fill(0)
         display.text("PARKSENSE", 28, 2)
         display.line(0, 12, 127, 12, 1)
 
-        if page == 0:
-            # Summary Screen
-            display.text("SLOTS AVAILABLE", 4, 24)
-            display.text("{} / 4".format(available_count), 44, 42)
+        # 1. All 4 slots confirmed occupied (Lot Full)
+        if all_occupied:
+            if entry_detected or page == 0:
+                # OLED: "Sorry No Slots Available"
+                display.text("Sorry No Slots", 8, 26)
+                display.text("Available", 28, 42)
+            else:
+                display.text("SLOT STATUS", 20, 14)
+                for index, state in enumerate(states):
+                    display.text("S{}: OCCUPIED".format(index + 1), 10, 25 + index * 9)
+
+        # 2. Reserved slots exist and rest are occupied
+        elif reserved_count > 0 and available_count == 0:
+            if entry_detected:
+                # Vehicle detected at entrance: "Only Reserved Vehicles Must enter"
+                display.text("Only Reserved", 12, 20)
+                display.text("Vehicles Must", 12, 34)
+                display.text("Enter", 44, 48)
+            elif page == 0:
+                # User requirement: "S1 is reserved" or "S1 , S2 are Reserved", etc.
+                res_lines = format_reservation_display(reserved_slots)
+                if len(res_lines) == 1:
+                    lx = max(0, (128 - len(res_lines[0]) * 8) // 2)
+                    display.text(res_lines[0], lx, 32)
+                elif len(res_lines) >= 2:
+                    lx0 = max(0, (128 - len(res_lines[0]) * 8) // 2)
+                    lx1 = max(0, (128 - len(res_lines[1]) * 8) // 2)
+                    display.text(res_lines[0], lx0, 26)
+                    display.text(res_lines[1], lx1, 42)
+            else:
+                display.text("SLOT STATUS", 20, 14)
+                for index, state in enumerate(states):
+                    display.text("S{}: {}".format(index + 1, state), 10, 25 + index * 9)
+
+        # 3. Reserved slots exist but normal slots are also available
+        elif reserved_count > 0:
+            if page == 0:
+                res_lines = format_reservation_display(reserved_slots)
+                display.text("AVAIL: {}/4".format(available_count), 28, 18)
+                if len(res_lines) == 1:
+                    lx = max(0, (128 - len(res_lines[0]) * 8) // 2)
+                    display.text(res_lines[0], lx, 36)
+                elif len(res_lines) >= 2:
+                    lx0 = max(0, (128 - len(res_lines[0]) * 8) // 2)
+                    lx1 = max(0, (128 - len(res_lines[1]) * 8) // 2)
+                    display.text(res_lines[0], lx0, 32)
+                    display.text(res_lines[1], lx1, 46)
+            else:
+                display.text("SLOT STATUS", 20, 14)
+                for index, state in enumerate(states):
+                    display.text("S{}: {}".format(index + 1, state), 10, 25 + index * 9)
+
+        # 4. Normal open parking mode
         else:
-            # Detailed Slot Status Screen
-            display.text("SLOT STATUS", 20, 14)
-            for index, state in enumerate(states):
-                display.text("S{}: {}".format(index + 1, state), 10, 25 + index * 9)
+            if page == 0:
+                display.text("SLOTS AVAILABLE", 4, 24)
+                display.text("{} / 4".format(available_count), 44, 42)
+            else:
+                display.text("SLOT STATUS", 20, 14)
+                for index, state in enumerate(states):
+                    display.text("S{}: {}".format(index + 1, state), 10, 25 + index * 9)
 
         display.show()
         last_display_refresh = now
     except Exception as exc:
-        print("OLED update failed; controller continues:", exc)
+        print("OLED update failed:", exc)
         display = None
 
 
@@ -856,6 +909,9 @@ while True:
         sleep_ms(SENSOR_GAP_MS)
 
     available_indices = available_slot_indices(slot_states)
+    reserved_indices = [i for i, s in enumerate(slot_states) if s == "RESERVED"]
+    occupied_indices = [i for i, s in enumerate(slot_states) if s == "OCCUPIED"]
+    all_occupied = (len(occupied_indices) == len(slot_states) and len(slot_states) > 0)
     write_leds(slot_led_mask(slot_states))
 
     # Gate sensors are read after slot sensors, not simultaneously.
@@ -864,14 +920,21 @@ while True:
     exit_distance = read_distance(EXIT_SENSOR, "EXIT")
     sleep_ms(SENSOR_GAP_MS)
 
-    request = gate_request(entry_distance, exit_distance, len(available_indices))
+    request = gate_request(entry_distance, exit_distance, len(available_indices), len(reserved_indices))
     entry_counter.update(entry_distance, request == "ENTRY")
     exit_counter.update(exit_distance, request == "EXIT")
 
     now = ticks_ms()
-    if entry_distance is not None and entry_distance <= GATE_THRESHOLD_CM and len(available_indices) == 0:
-        if ticks_diff(now, last_status_print) >= STATUS_PRINT_MS:
-            print("[ENTRY LOCKED] No slots available (0/4). Entry gate servo remains closed.")
+    if entry_distance is not None and entry_distance <= GATE_THRESHOLD_CM:
+        if all_occupied:
+            if ticks_diff(now, last_status_print) >= STATUS_PRINT_MS:
+                print("[ENTRY LOCKED] All slots occupied (4/4). OLED: 'Sorry No slots available'. Servo closed.")
+        elif len(reserved_indices) > 0 and len(available_indices) == 0:
+            if ticks_diff(now, last_status_print) >= STATUS_PRINT_MS:
+                print("[ENTRY OPEN] Active reservation held. OLED: 'Only Reserved Vehicles Must enter'. Gate opened.")
+        elif request == "ENTRY":
+            if ticks_diff(now, last_status_print) >= STATUS_PRINT_MS:
+                print("[ENTRY OPEN] Slot available. Opening entrance gate.")
     if request is not None:
         gate_reason = request
         gate_open_until = ticks_add(now, GATE_HOLD_MS)
@@ -885,7 +948,7 @@ while True:
 
     set_servo(gate_open)
     update_oled(len(available_indices), slot_states,
-                entry_counter.count, exit_counter.count, now)
+                entry_counter.count, exit_counter.count, now, entry_distance)
 
     # Cloud Telemetry and Reservation Synchronization
     if ticks_diff(now, last_telemetry_time) >= TELEMETRY_INTERVAL_MS:

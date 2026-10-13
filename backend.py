@@ -12,7 +12,23 @@ from datetime import datetime, timedelta
 import jwt  # type: ignore
 from flask import Flask, jsonify, request, send_from_directory  # type: ignore
 from flask_cors import CORS  # type: ignore
-from werkzeug.security import check_password_hash, generate_password_hash  # type: ignore
+import hashlib
+from werkzeug.security import check_password_hash as _wz_check_password_hash  # type: ignore
+from werkzeug.security import generate_password_hash as _wz_generate_password_hash  # type: ignore
+
+# Fallback to pbkdf2:sha256 if hashlib.scrypt is unavailable (e.g., macOS LibreSSL Python builds)
+DEFAULT_HASH_METHOD = "scrypt" if hasattr(hashlib, "scrypt") else "pbkdf2:sha256"
+
+
+def generate_password_hash(password: str, method: str = DEFAULT_HASH_METHOD, salt_length: int = 16) -> str:
+    return _wz_generate_password_hash(password, method=method, salt_length=salt_length)
+
+
+def check_password_hash(pwhash: str, password: str) -> bool:
+    try:
+        return _wz_check_password_hash(pwhash, password)
+    except (AttributeError, ValueError):
+        return False
 
 from assistant_engine import process_assistant_query
 
@@ -1690,6 +1706,24 @@ def assistant_chat():
     return jsonify(result), 200
 
 
+def _select_bind_host(preferred_host: str, port: int) -> str:
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind((preferred_host, port))
+            return preferred_host
+        except OSError:
+            if preferred_host == "0.0.0.0":
+                print(f"[NOTE] Port {port} is occupied on 0.0.0.0 (macOS AirPlay Receiver).")
+                print(f"       Binding to 127.0.0.1 (accessible at http://localhost:{port}).\n")
+                return "127.0.0.1"
+            return preferred_host
+
+
 if __name__ == "__main__":
     init_db()
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    configured_host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", 5000))
+    host = _select_bind_host(configured_host, port)
+    app.run(debug=True, host=host, port=port)

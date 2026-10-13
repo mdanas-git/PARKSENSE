@@ -12,19 +12,24 @@ import sys
 import time
 
 workspace = os.path.dirname(os.path.abspath(__file__))
-cloudflared_path = os.path.join(workspace, "cloudflared.exe")
+default_bin = "cloudflared.exe" if sys.platform == "win32" else "cloudflared"
+cloudflared_path = os.path.join(workspace, default_bin)
 
 if not os.path.exists(cloudflared_path):
     which_bin = shutil.which("cloudflared") or shutil.which("cloudflared.exe")
     if which_bin:
         cloudflared_path = which_bin
     else:
-        # Check standard installation paths (e.g. winget, Program Files)
+        # Check standard installation paths (macOS Homebrew, Windows Program Files, WinGet)
         std_candidates = [
+            "/opt/homebrew/bin/cloudflared",
+            "/usr/local/bin/cloudflared",
+            os.path.join(workspace, "cloudflared"),
             os.path.join(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"), "cloudflared", "cloudflared.exe"),
             os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "cloudflared", "cloudflared.exe"),
             os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WinGet", "Links", "cloudflared.exe"),
             os.path.abspath(os.path.join(workspace, "..", "cloudflared.exe")),
+            os.path.abspath(os.path.join(workspace, "..", "cloudflared")),
         ]
         for cand in std_candidates:
             if os.path.exists(cand):
@@ -32,9 +37,19 @@ if not os.path.exists(cloudflared_path):
                 break
 
 if not os.path.exists(cloudflared_path):
-    print(f"Error: cloudflared.exe not found in {workspace} or PATH.")
+    print(f"Error: {default_bin} not found in {workspace} or PATH.")
+    if sys.platform == "darwin":
+        print("Install via Homebrew: brew install cloudflared")
     input("Press Enter to exit...")
     sys.exit(1)
+
+# Ensure executable permissions on Unix systems (macOS / Linux)
+if sys.platform != "win32":
+    try:
+        current_mode = os.stat(cloudflared_path).st_mode
+        os.chmod(cloudflared_path, current_mode | 0o755)
+    except Exception:
+        pass
 
 print("=" * 65)
 print("     PARKSENSE -- WOKWI HARDWARE INTEGRATION TUNNEL")
@@ -42,9 +57,9 @@ print("=" * 65)
 print("\nStarting Cloudflare Tunnel to local Flask backend (port 5000)...")
 print("Please wait a few seconds for Cloudflare to assign a public URL...\n")
 
-# Start cloudflared as a child process
+# Start cloudflared as a child process (explicit IPv4 loopback to avoid macOS IPv6 AirPlay conflict)
 proc = subprocess.Popen(
-    [cloudflared_path, "tunnel", "--url", "http://localhost:5000"],
+    [cloudflared_path, "tunnel", "--url", "http://127.0.0.1:5000"],
     stdout=subprocess.PIPE,
     stderr=subprocess.STDOUT,
     text=True,
@@ -53,7 +68,7 @@ proc = subprocess.Popen(
 )
 
 tunnel_url = None
-url_regex = re.compile(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com")
+url_regex = re.compile(r"https://(?!api\b)[a-zA-Z0-9-]+\.trycloudflare\.com")
 
 # Read output line by line until URL is found
 for line in iter(proc.stdout.readline, ""):
@@ -113,14 +128,18 @@ for line in iter(proc.stdout.readline, ""):
                     except Exception as err:
                         print(f"Notice: could not update {target}: {err}")
 
-            # Try to copy to Windows clipboard
+            # Try to copy to clipboard (macOS: pbcopy, Windows: PowerShell)
             try:
-                subprocess.run(
-                    ["powershell", "-NoProfile", "-Command", f"Set-Clipboard -Value '{tunnel_url}'"],
-                    capture_output=True,
-                    timeout=2
-                )
-                copied_msg = "(COPIED TO CLIPBOARD AUTOMATICALLY!)"
+                if sys.platform == "darwin":
+                    subprocess.run(["pbcopy"], input=tunnel_url.encode("utf-8"), check=True, timeout=2)
+                    copied_msg = "(COPIED TO CLIPBOARD AUTOMATICALLY!)"
+                elif sys.platform == "win32":
+                    subprocess.run(
+                        ["powershell", "-NoProfile", "-Command", f"Set-Clipboard -Value '{tunnel_url}'"],
+                        capture_output=True,
+                        timeout=2
+                    )
+                    copied_msg = "(COPIED TO CLIPBOARD AUTOMATICALLY!)"
             except Exception:
                 copied_msg = ""
 

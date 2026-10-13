@@ -72,13 +72,15 @@ def available_slot_indices(states):
     return [i for i, state in enumerate(states) if state == "AVAILABLE"]
 
 
-def gate_request(entry_distance, exit_distance, available_count):
-    """Exit wins simultaneous detection; entry requires an available slot."""
+def gate_request(entry_distance, exit_distance, available_count, reserved_count=0):
+    """Exit wins simultaneous detection; entry opens if any slot is available or reserved.
+    The entrance gate will only remain closed when every slot is occupied (available_count + reserved_count == 0).
+    """
     if valid_distance(exit_distance) and float(exit_distance) <= GATE_THRESHOLD_CM:
         return "EXIT"
     if (valid_distance(entry_distance)
             and float(entry_distance) <= GATE_THRESHOLD_CM
-            and available_count > 0):
+            and (available_count + reserved_count) > 0):
         return "ENTRY"
     return None
 

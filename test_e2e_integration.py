@@ -40,7 +40,7 @@ for p in [os.path.join(PROJECT_ROOT, "firmware"), PROJECT_ROOT, TESTS_DIR]:
 from parksense_logic import gate_request, slot_led_mask
 
 LOCAL_URL = "http://127.0.0.1:5000"
-TUNNEL_URL = "https://famous-rss-catherine-dealers.trycloudflare.com"
+TUNNEL_URL = "https://hebrew-oldest-delicious-supplements.trycloudflare.com"
 
 
 def http_req(url, method="GET", body=None, token=None, headers=None, timeout=5):
@@ -565,8 +565,11 @@ def run_e2e_tests():
     assert gate_request(entry_distance=10.0, exit_distance=None, available_count=4) == "ENTRY"
     assert gate_request(entry_distance=None, exit_distance=12.0, available_count=4) == "EXIT"
     assert gate_request(entry_distance=10.0, exit_distance=10.0, available_count=4) == "EXIT"
-    assert gate_request(entry_distance=10.0, exit_distance=None, available_count=0) is None
-    print("[PASS] 19. MicroPython servo gate logic verified (Entry open, Exit priority, Lot full lockout)")
+    assert gate_request(entry_distance=10.0, exit_distance=None, available_count=0, reserved_count=0) is None
+    # Entrance gate opens for drivers with active reservations even if unreserved slots are 0
+    assert gate_request(entry_distance=10.0, exit_distance=None, available_count=0, reserved_count=1) == "ENTRY"
+    assert gate_request(entry_distance=10.0, exit_distance=None, available_count=0, reserved_count=2) == "ENTRY"
+    print("[PASS] 19. MicroPython servo gate logic verified (Entry open for available & reserved bays, Exit priority, All occupied lockout)")
 
 
     # ---------------------------------------------------------

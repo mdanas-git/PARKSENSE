@@ -33,9 +33,9 @@ Whether you're a driver looking for an open spot, a facility operator reviewing 
 ```text
  ┌─────────────────────────────────────────────────────────┐
  │               ESP32 Edge Node (Wokwi / Real)            │
- │  • 4x HC-SR04 Slot Sensors   • 74HC595 LED Shift Reg   │
- │  • Entry/Exit Gate Sensors   • SG90 Barrier Servo      │
- │  • SSD1306 OLED Display      • MicroPython Controller  │
+ │  • 4x HC-SR04 Slot Sensors   • 74HC595 LED Shift Reg    │
+ │  • Entry/Exit Gate Sensors   • SG90 Barrier Servo       │
+ │  • SSD1306 OLED Display      • MicroPython Controller   │
  └────────────────────────────┬────────────────────────────┘
                               │
                HTTPS / JSON   │ Telemetry Stream (Every 2.5s)
@@ -77,9 +77,9 @@ Whether you're a driver looking for an open spot, a facility operator reviewing 
 * **Graceful Expiration:** If the driver doesn't arrive within 5 minutes, the spot releases back to the community automatically.
 
 ### 3. 🚧 Automated Entry & Exit Servo Barrier
-* **Entry Check:** Opens only when at least one monitored bay is available.
+* **Entry Access:** Opens if there are available bays OR active reservations (yellow light active).
 * **Exit Priority:** Departing cars are cleared smoothly to avoid lot bottlenecks.
-* **Lot Full Lockout:** Automatically stays closed and signals `LOT FULL` when all bays are occupied or reserved.
+* **All-Occupied Lockout:** Entrance barrier is only closed when **every slot is physically occupied** (all 4 slots occupied by vehicles).
 
 ### 4. 🤖 Helpful ParkSense AI Assistant
 * **Privacy-First:** Operates locally without leaking administrative passwords or sensitive system internals.
@@ -96,9 +96,25 @@ Whether you're a driver looking for an open spot, a facility operator reviewing 
 
 ---
 
-## ⚡ Quick Start Guide
+## ⚡ Quick Start Guide (Windows & macOS)
 
 Follow these steps to run ParkSense locally on your computer in under 3 minutes.
+
+### 📋 Cross-Platform Quick Reference
+
+| Action | 🪟 Windows | 🍎 macOS / 🐧 Linux |
+| :--- | :--- | :--- |
+| **🚀 Start Backend (1-Click)** | Double-click `START_BACKEND.bat` | Run `./START_BACKEND.sh` |
+| **🌐 Start Tunnel (1-Click)** | Double-click `START_WOKWI_TUNNEL.bat` | Run `./START_WOKWI_TUNNEL.sh` |
+| **📦 Create Virtual Environment** | `python -m venv venv` | `python3 -m venv venv` |
+| **🔌 Activate Virtual Environment** | `venv\Scripts\activate` | `source venv/bin/activate` |
+| **📥 Install Dependencies** | `pip install -r requirements.txt` | `pip install -r requirements.txt` |
+| **🐍 Start Backend (CLI)** | `python backend.py` | `python backend.py` *(or `python3 backend.py`)* |
+| **☁️ Start Tunnel (CLI)** | `python tunnel_runner.py` | `python3 tunnel_runner.py` |
+| **🧪 Run Automated Tests** | `python test_e2e_integration.py` | `python3 test_e2e_integration.py` |
+| **🌐 Web Dashboard** | `http://localhost:5000` | `http://localhost:5000` |
+
+---
 
 ### 1. Clone the Repository
 ```bash
@@ -106,31 +122,101 @@ git clone https://github.com/mdanas-git/ParkSense.git
 cd ParkSense
 ```
 
-### 2. Set Up Python Environment
-```bash
-# Optional: Create and activate a virtual environment
-python -m venv venv
-# Windows:
-venv\Scripts\activate
-# Linux/macOS:
-source venv/bin/activate
+---
 
-# Install required dependencies
+### 🪟 2. Step-by-Step Guide for Windows
+
+#### Step A: Open Command Prompt or PowerShell
+Navigate to your cloned repository folder:
+```cmd
+cd ParkSense
+```
+
+#### Step B: Create & Activate Virtual Environment
+```cmd
+# Create virtual environment
+python -m venv venv
+
+# If using Command Prompt (cmd):
+venv\Scripts\activate.bat
+
+# If using PowerShell:
+venv\Scripts\Activate.ps1
+```
+
+> [!TIP]
+> **PowerShell Script Policy Fix:** If PowerShell displays `Activate.ps1 cannot be loaded because running scripts is disabled`, run:
+> ```powershell
+> Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+> ```
+> then run `venv\Scripts\Activate.ps1` again.
+
+#### Step C: Install Dependencies
+```cmd
 pip install -r requirements.txt
 ```
 
-### 3. Start the Backend Server
+#### Step D: Start the Backend Server
+Choose whichever method you prefer:
+* **Option 1 (1-Click):** Double-click `START_BACKEND.bat` in File Explorer.
+* **Option 2 (Terminal):**
+  ```cmd
+  python backend.py
+  ```
+
+#### Step E: Open the Web Application
+Open your browser and navigate to:
+👉 **`http://localhost:5000`** (or `http://127.0.0.1:5000`)
+
+---
+
+### 🍎 3. Step-by-Step Guide for macOS / 🐧 Linux
+
+#### Step A: Open Terminal
+Navigate to your cloned repository folder:
 ```bash
-# Option A: Run directly via Python
-python backend.py
-
-# Option B: Windows 1-Click Launcher
-START_BACKEND.bat
+cd ParkSense
 ```
-Your backend will start on **`http://127.0.0.1:5000`**. Flask serves both the REST API and the static frontend application together on this port.
 
-### 4. Launch the Frontend
-Simply open **`http://localhost:5000`** in any modern web browser!
+#### Step B: Create & Activate Virtual Environment
+macOS includes `python3` out of the box:
+```bash
+# Create virtual environment
+python3 -m venv venv
+
+# Activate virtual environment
+source venv/bin/activate
+```
+
+#### Step C: Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+#### Step D: Start the Backend Server
+Choose whichever method you prefer:
+* **Option 1 (1-Click Shell Script):**
+  ```bash
+  ./START_BACKEND.sh
+  ```
+  *(If permissions are needed, run `chmod +x START_BACKEND.sh`, or execute with `bash START_BACKEND.sh`)*
+* **Option 2 (Terminal inside active venv):**
+  ```bash
+  python backend.py
+  # or directly: ./venv/bin/python backend.py
+  ```
+
+> [!IMPORTANT]
+> **macOS AirPlay Port 5000 Conflict:**
+> On macOS Monterey, Ventura, Sonoma, and Sequoia, Apple's **AirPlay Receiver** service runs in `ControlCenter` and occupies port 5000 by default. `backend.py` includes a smart auto-fallback to `127.0.0.1:5000`.
+> **Recommended for smooth tunnel and local access:** Turn AirPlay Receiver off so port 5000 is 100% free:
+> 1. Open **System Settings** on your Mac.
+> 2. Go to **General > AirDrop & AirPlay**.
+> 3. Toggle **AirPlay Receiver** to **OFF**.
+
+#### Step E: Open the Web Application
+Open your browser and navigate to:
+👉 **`http://localhost:5000`** (or `http://127.0.0.1:5000`)
 
 ---
 
@@ -185,41 +271,63 @@ If Cloudflare is not already installed on your machine, install the official pac
   ```powershell
   winget install Cloudflare.cloudflared
   ```
-* **macOS (Homebrew):**
-  ```bash
-  brew install cloudflared
-  ```
+* **macOS:**
+  * **Option A (Via Homebrew):**
+    ```bash
+    brew install cloudflared
+    ```
+  * **Option B (Direct Download — No Homebrew needed):**
+    ```bash
+    # Apple Silicon (M1/M2/M3/M4/M5):
+    curl -L -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-arm64.tgz && tar -xzf cloudflared-darwin-arm64.tgz && chmod +x cloudflared
+
+    # Intel Mac:
+    curl -L -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64.tgz && tar -xzf cloudflared-darwin-amd64.tgz && chmod +x cloudflared
+    ```
 * **Linux (Debian / Ubuntu):**
   ```bash
   sudo apt install cloudflared
   ```
 
----
+> [!IMPORTANT]
+> **macOS AirPlay Notice (If Tunnel URL Hangs or Doesn't Load):**
+> On macOS Monterey, Ventura, Sonoma, and Sequoia, Apple's **AirPlay Receiver** service runs in `ControlCenter` and listens on port 5000 (`[::]:5000`) by default. When Cloudflare Tunnel attempts to connect to port 5000, macOS routes the requests to AirPlay instead of Flask!
+> To fix this immediately: Open **System Settings > General > AirDrop & AirPlay** and turn **AirPlay Receiver** **OFF**.
 
 ### 2. How to Launch Cloudflare Tunnel
 
 Choose the method that best matches your workflow:
 
-#### Option 1: Windows 1-Click Batch Launcher (Recommended)
-Simply double-click the included batch file in the project root:
-```text
-START_WOKWI_TUNNEL.bat
-```
-This automatically invokes the Python tunnel runner and keeps the tunnel connection active.
+#### Option 1: 1-Click Launchers (Recommended)
+* **Windows:** Double-click or run:
+  ```cmd
+  START_WOKWI_TUNNEL.bat
+  ```
+* **macOS / Linux:** Run the shell launcher:
+  ```bash
+  ./START_WOKWI_TUNNEL.sh
+  ```
+  *(If needed, grant execute permission once: `chmod +x START_WOKWI_TUNNEL.sh`)*
 
 #### Option 2: Cross-Platform Python Runner (`tunnel_runner.py`)
 Run the automated runner directly from your terminal:
-```bash
-python tunnel_runner.py
-```
+* **Windows:**
+  ```cmd
+  python tunnel_runner.py
+  ```
+* **macOS / Linux:**
+  ```bash
+  python3 tunnel_runner.py
+  # or: python tunnel_runner.py (inside active venv)
+  ```
 
 > [!TIP]
-> **Automatic Firmware Synchronization:** `tunnel_runner.py` automatically detects the newly assigned Cloudflare HTTPS URL and updates `BACKEND_BASE_URL` inside [`main.py`](main.py) for you! You never need to manually copy and paste tunnel URLs into your ESP32 code.
+> **Automatic Firmware Synchronization & Clipboard:** `tunnel_runner.py` automatically detects the newly assigned Cloudflare HTTPS URL, updates `BACKEND_BASE_URL` inside [`main.py`](main.py) for you, and copies the URL to your system clipboard (PowerShell on Windows, `pbcopy` on macOS)! You never need to manually copy and paste tunnel URLs into your ESP32 code.
 
 #### Option 3: Direct Cloudflared CLI Command
 If you prefer running the `cloudflared` CLI command directly:
 ```bash
-cloudflared tunnel --url http://localhost:5000
+cloudflared tunnel --url http://127.0.0.1:5000
 ```
 
 ### Verifying Tunnel Connectivity
@@ -318,7 +426,9 @@ PARKSENSE/
 ├── tunnel_runner.py      # ☁️ Cloudflare tunnel automation & main.py sync
 ├── test_e2e_integration.py # 🧪 22-point comprehensive automated system test suite
 ├── START_BACKEND.bat     # 🚀 1-click Windows launcher for Flask backend
+├── START_BACKEND.sh      # 🚀 1-click macOS/Linux launcher for Flask backend
 ├── START_WOKWI_TUNNEL.bat# 🚀 1-click Windows launcher for Cloudflare tunnel
+├── START_WOKWI_TUNNEL.sh # 🚀 1-click macOS/Linux launcher for Cloudflare tunnel
 ├── requirements.txt      # 📦 Python dependencies
 ├── README.md             # 📖 Project documentation and guide
 ├── LICENSE               # ⚖️ MIT License
@@ -341,10 +451,16 @@ ParkSense includes an automated 22-point end-to-end integration test suite cover
 * Gate servo logic (arrival, exit priority, and lot-full lockout)
 * AI Assistant privacy filters and natural language responses
 
-To run the full suite:
-```bash
-python test_e2e_integration.py
-```
+To run the full suite (ensure `backend.py` is running first):
+* **Windows:**
+  ```cmd
+  python test_e2e_integration.py
+  ```
+* **macOS / Linux:**
+  ```bash
+  python3 test_e2e_integration.py
+  # or: python test_e2e_integration.py (inside active venv)
+  ```
 
 Expected result:
 ```text
@@ -353,6 +469,20 @@ Expected result:
   VERIFIED: FLASK, SQLITE, RBAC (3 ROLES), HARDWARE SYNC & AI ASSISTANT
 ======================================================================
 ```
+
+---
+
+## 🔧 Troubleshooting & Common Questions
+
+| Issue | Platform | Solution |
+| :--- | :--- | :--- |
+| **`command not found: python`** | 🍎 macOS | macOS uses `python3` by default. Either run `python3 backend.py` or activate your virtual environment via `source venv/bin/activate` (which provides the `python` command). |
+| **`No module named 'flask'`** | 🍎 macOS / 🪟 Windows | Virtual environment is either not activated or dependencies are missing. Run `pip install -r requirements.txt`. |
+| **`running scripts is disabled`** | 🪟 Windows (PowerShell) | Run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` in PowerShell, then re-run `venv\Scripts\Activate.ps1`. |
+| **`Permission denied: ./START_...`** | 🍎 macOS / 🐧 Linux | Grant execute permissions: `chmod +x START_BACKEND.sh START_WOKWI_TUNNEL.sh` (or run via `bash START_BACKEND.sh`). |
+| **Port 5000 busy / Tunnel URL hangs** | 🍎 macOS | macOS AirPlay Receiver occupies port 5000. Turn it off in **System Settings > General > AirDrop & AirPlay > AirPlay Receiver (OFF)**. |
+| **`cloudflared: command not found`** | 🍎 macOS | Use Option B in the Tunnel section to download `cloudflared` directly with `curl`, or install via `brew install cloudflared`. |
+| **Database locked / duplicate server** | All | Ensure only one backend instance is running (`lsof -i :5000` on Mac, Task Manager on Windows). |
 
 ---
 

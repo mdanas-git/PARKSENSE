@@ -505,9 +505,9 @@ def match_intent_and_respond(msg, context):
         return (
             f"**Automated Gate Barrier Operation:**\n\n"
             f"The entrance/exit barrier is powered by a MicroPython servo motor:\n"
-            f"1. **Entry Rule:** When a car arrives at the entry sensor (distance < 15 cm), the barrier opens to 90 degrees **only if** at least one slot is AVAILABLE.\n"
-            f"2. **Exit Priority:** If an exiting vehicle is detected, exit traffic takes immediate priority.\n"
-            f"3. **Lot Full Lockout:** If all slots are occupied or reserved, the barrier remains closed (0 degrees) and displays `LOT FULL`.",
+            f"1. **Entry Rule:** When a car arrives at the entry sensor (distance <= 15 cm), the barrier opens if at least one slot is AVAILABLE or has an active RESERVATION (yellow light active).\n"
+            f"2. **Exit Priority:** If an exiting vehicle is detected, exit traffic takes immediate priority to avoid lot bottlenecks.\n"
+            f"3. **Full Lockout:** The entrance gate is only closed when **every slot is physically OCCUPIED** (all red lights).",
             ["Check live UIT status", "What is ParkSense?", "How do reservations work?"]
         )
 

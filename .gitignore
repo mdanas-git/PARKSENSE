@@ -23,6 +23,7 @@ venv.bak/
 
 # Cloudflare Tunnel Binary & logs (large local binary)
 cloudflared.exe
+cloudflared
 *.exe
 tunnel.log
 *.log
