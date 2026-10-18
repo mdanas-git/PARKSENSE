@@ -39,14 +39,25 @@ except Exception as exc:
     print("OLED driver import failed; parking control continues:", exc)
 
 # ---------------------------- Network & Cloud Config -----------------
-WIFI_SSID = "Wokwi-GUEST"
-WIFI_PASSWORD = ""
-# If simulating in Wokwi (browser/cloud), use the live public HTTPS tunnel:
-# If running with local gateway or local micro-controller on LAN, use "http://localhost:5000"
-BACKEND_BASE_URL = "https://hebrew-oldest-delicious-supplements.trycloudflare.com"
+# Operation Mode:
+# True  --> Real Physical ESP32 (connects to phone hotspot & direct Mac IP)
+# False --> Wokwi Cloud Simulation (connects to Wokwi-GUEST & Cloudflare Tunnel)
+RUN_ON_PHYSICAL_HARDWARE = True
+
+if RUN_ON_PHYSICAL_HARDWARE:
+    WIFI_SSID = "Mohd Anas's A14"
+    WIFI_PASSWORD = "123456789"
+    BACKEND_BASE_URL = "http://10.35.11.155:5000"
+else:
+    WIFI_SSID = "Wokwi-GUEST"
+    WIFI_PASSWORD = ""
+    BACKEND_BASE_URL = "https://addressed-nuke-stands-congratulations.trycloudflare.com"
+
 DEVICE_ID = "esp32-uit-01"
 BUILD_REV = "6d64616e61732d676974"
 FACILITY_ID = 1
+FACILITY_NAME = "UIT Parking"
+OLED_HEADER = "PARKSENSE"
 TELEMETRY_INTERVAL_MS = 2500  # Send telemetry & sync reservations every 2.5s
 HTTP_TIMEOUT_SECONDS = 3
 WIFI_RETRY_INTERVAL_MS = 10000
@@ -102,9 +113,29 @@ entry_counter = PresenceCounter(CLEAR_READINGS_TO_RELEASE)
 exit_counter = PresenceCounter(CLEAR_READINGS_TO_RELEASE)
 
 try:
-    i2c = I2C(0, scl=Pin(OLED_SCL_PIN), sda=Pin(OLED_SDA_PIN), freq=400000)
-    display = (ssd1306.SSD1306_I2C(128, 64, i2c, addr=OLED_ADDRESS)
-               if ssd1306 is not None else None)
+    try:
+        from machine import SoftI2C
+        i2c = SoftI2C(scl=Pin(OLED_SCL_PIN), sda=Pin(OLED_SDA_PIN), freq=100000)
+    except Exception:
+        i2c = I2C(0, scl=Pin(OLED_SCL_PIN), sda=Pin(OLED_SDA_PIN), freq=100000)
+
+    scan_addrs = i2c.scan() if i2c else []
+    target_addr = OLED_ADDRESS
+    if 0x3C in scan_addrs:
+        target_addr = 0x3C
+    elif 0x3D in scan_addrs:
+        target_addr = 0x3D
+    elif scan_addrs:
+        target_addr = scan_addrs[0]
+
+    if ssd1306 is not None:
+        display = ssd1306.SSD1306_I2C(128, 64, i2c, addr=target_addr)
+        print("OLED initialized at address 0x{:02X}".format(target_addr))
+        if not scan_addrs:
+            print("[OLED NOTE] I2C scan returned empty, but display driver attached to 0x{:02X}".format(target_addr))
+    else:
+        display = None
+        print("[OLED WARNING] ssd1306.py module missing! Upload ssd1306.py to ESP32 root.")
 except Exception as exc:
     i2c = None
     display = None

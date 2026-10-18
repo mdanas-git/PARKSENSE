@@ -40,8 +40,32 @@ if not os.path.exists(cloudflared_path):
     print(f"Error: {default_bin} not found in {workspace} or PATH.")
     if sys.platform == "darwin":
         print("Install via Homebrew: brew install cloudflared")
+    elif sys.platform == "win32":
+        print("Install via WinGet: winget install Cloudflare.cloudflared")
     input("Press Enter to exit...")
     sys.exit(1)
+
+# Fail-safe check: If cloudflared was downloaded as a .tgz / gzip archive, extract it automatically
+if os.path.exists(cloudflared_path) and os.path.isfile(cloudflared_path):
+    try:
+        with open(cloudflared_path, "rb") as f:
+            magic = f.read(2)
+        if magic == b"\x1f\x8b":
+            print("[INFO] Detected compressed archive for 'cloudflared'. Extracting binary automatically...")
+            import tarfile
+            with tarfile.open(cloudflared_path, "r:gz") as tar:
+                for member in tar.getmembers():
+                    if member.name.endswith("cloudflared") or member.name == "cloudflared":
+                        extracted = tar.extractfile(member)
+                        if extracted:
+                            data = extracted.read()
+                            with open(cloudflared_path + ".extracted", "wb") as out:
+                                out.write(data)
+                            os.replace(cloudflared_path + ".extracted", cloudflared_path)
+                            print("[INFO] Successfully extracted cloudflared executable binary.")
+                            break
+    except Exception as exc:
+        print(f"[NOTICE] Auto-extraction notice: {exc}")
 
 # Ensure executable permissions on Unix systems (macOS / Linux)
 if sys.platform != "win32":
@@ -79,14 +103,16 @@ for line in iter(proc.stdout.readline, ""):
         if match:
             tunnel_url = match.group(0)
             
-            # Automatically update main.py and test_e2e_integration.py across modular and root locations
+            # Automatically update main.py, main_ucer.py, and test_e2e_integration.py across modular and root locations
             targets = [
                 os.path.join(workspace, "main.py"),
+                os.path.join(workspace, "main_ucer.py"),
                 os.path.join(workspace, "firmware", "main.py"),
                 os.path.join(workspace, "test_e2e_integration.py"),
                 os.path.join(workspace, "tests", "test_e2e_integration.py"),
                 os.path.join(workspace, "..", "firmware", "main.py"),
                 os.path.join(workspace, "..", "main.py"),
+                os.path.join(workspace, "..", "main_ucer.py"),
                 os.path.join(workspace, "..", "tests", "test_e2e_integration.py"),
                 os.path.join(workspace, "..", "test_e2e_integration.py"),
             ]
@@ -113,8 +139,9 @@ for line in iter(proc.stdout.readline, ""):
                     try:
                         with open(target, "r", encoding="utf-8") as f:
                             c = f.read()
+                        # Update Cloudflare tunnel URL while preserving physical hardware LAN IPs
                         c = re.sub(
-                            r'BACKEND_BASE_URL\s*=\s*["\'][^"\']+["\']',
+                            r'BACKEND_BASE_URL\s*=\s*["\']https://[a-zA-Z0-9-]+\.trycloudflare\.com["\']',
                             f'BACKEND_BASE_URL = "{tunnel_url}"',
                             c
                         )

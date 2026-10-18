@@ -279,10 +279,10 @@ If Cloudflare is not already installed on your machine, install the official pac
   * **Option B (Direct Download — No Homebrew needed):**
     ```bash
     # Apple Silicon (M1/M2/M3/M4/M5):
-    curl -L -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-arm64.tgz && tar -xzf cloudflared-darwin-arm64.tgz && chmod +x cloudflared
+    curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-arm64.tgz | tar -xzf - && chmod +x cloudflared
 
     # Intel Mac:
-    curl -L -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64.tgz && tar -xzf cloudflared-darwin-amd64.tgz && chmod +x cloudflared
+    curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64.tgz | tar -xzf - && chmod +x cloudflared
     ```
 * **Linux (Debian / Ubuntu):**
   ```bash

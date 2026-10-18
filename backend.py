@@ -196,6 +196,24 @@ def init_db():
                 VALUES (?, ?, ?, 'UNKNOWN')
             """, (loc_id, i, f"S{i}"))
 
+    # Seed secondary demonstration location: UCER Parking
+    c.execute("SELECT id FROM locations WHERE name = ?", ("UCER Parking",))
+    row_ucer = c.fetchone()
+    if not row_ucer:
+        c.execute("""
+            INSERT INTO locations (name, address, total_slots, device_id, status, is_published, proposal_status)
+            VALUES (?, ?, ?, ?, ?, 1, 'approved')
+        """, ("UCER Parking", "United College of Engineering & Research, Prayagraj", 4, "esp32-ucer-01", "OFFLINE"))
+        ucer_loc_id = c.lastrowid
+        for i in range(1, 5):
+            c.execute("""
+                INSERT INTO parking_slots (location_id, slot_number, label, physical_state)
+                VALUES (?, ?, ?, 'UNKNOWN')
+            """, (ucer_loc_id, i, f"S{i}"))
+    else:
+        # Guarantee device_id is linked to esp32-ucer-01
+        c.execute("UPDATE locations SET device_id = 'esp32-ucer-01' WHERE name = 'UCER Parking' AND (device_id IS NULL OR device_id = '')")
+
     # 6. Login and Security Audit Logs table
     c.execute("""
         CREATE TABLE IF NOT EXISTS login_logs (
@@ -1584,6 +1602,13 @@ def admin_toggle_suspend(target_user_id):
         conn.close()
         return jsonify({"message": "User not found."}), 404
 
+    # Seniority rule: A newer admin cannot suspend an older administrator
+    if target["role"] == "admin" and current_user["id"] > target["id"]:
+        conn.close()
+        return jsonify({
+            "message": "Permission denied: Only a senior/older administrator can suspend another administrator."
+        }), 403
+
     conn.execute("UPDATE users SET is_suspended = ? WHERE id = ?", (1 if suspend else 0, target_user_id))
     conn.commit()
     conn.close()
@@ -1597,7 +1622,7 @@ def admin_toggle_suspend(target_user_id):
 
 @app.route("/api/admin/users/<int:target_user_id>/role", methods=["PUT"])
 def admin_update_role(target_user_id):
-    """Assign roles: Admin, Editor, User. Accessible strictly by administrators."""
+    """Assign roles: Admin, Editor, User. Older admins can modify newer admins; newer admins cannot modify older admins."""
     current_user = get_authenticated_user()
     if not current_user or current_user.get("role") != "admin":
         return jsonify({"message": "Administrator privileges required."}), 403
@@ -1617,6 +1642,14 @@ def admin_update_role(target_user_id):
         conn.close()
         return jsonify({"message": "User not found."}), 404
 
+    # Seniority rule: Only an older administrator (lower ID / registered earlier) can change another admin's role
+    if target["role"] == "admin" and target_user_id != current_user["id"]:
+        if current_user["id"] > target["id"]:
+            conn.close()
+            return jsonify({
+                "message": "Permission denied: Only senior/older administrators can modify the role of an administrator."
+            }), 403
+
     conn.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, target_user_id))
     conn.commit()
     conn.close()
@@ -1629,7 +1662,7 @@ def admin_update_role(target_user_id):
 
 @app.route("/api/admin/users/<int:target_user_id>/password", methods=["PUT"])
 def admin_set_password(target_user_id):
-    """Update user password directly. Accessible by administrators."""
+    """Update user password directly. Accessible by administrators with seniority enforcement."""
     current_user = get_authenticated_user()
     if not current_user or current_user.get("role") != "admin":
         return jsonify({"message": "Administrator privileges required."}), 403
@@ -1646,6 +1679,13 @@ def admin_set_password(target_user_id):
     if not target:
         conn.close()
         return jsonify({"message": "User not found."}), 404
+
+    # Seniority rule: A newer admin cannot modify the password of an older administrator
+    if target["role"] == "admin" and target_user_id != current_user["id"] and current_user["id"] > target["id"]:
+        conn.close()
+        return jsonify({
+            "message": "Permission denied: Only senior/older administrators can change an administrator's password."
+        }), 403
 
     conn.execute("UPDATE users SET password_hash = ?, plain_password = ? WHERE id = ?", (new_hash, new_password, target_user_id))
     conn.commit()

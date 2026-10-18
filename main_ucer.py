@@ -1,0 +1,988 @@
+"""
+ParkSense: Four-slot smart parking controller with entry/exit gate sensing and cloud telemetry.
+Author: mdanas-git (https://github.com/mdanas-git)
+Target: ESP32 (MicroPython / Wokwi Simulation)
+"""
+from machine import Pin, I2C  # type: ignore
+from time import sleep_ms, ticks_ms, ticks_add, ticks_diff
+import sys
+import json
+from hcsr04 import HCSR04
+from servo import Servo
+from parksense_logic import (
+    SLOT_THRESHOLD_CM, GATE_THRESHOLD_CM, valid_distance, update_slot_state,
+    slot_led_mask, available_slot_indices, gate_request, PresenceCounter,
+)
+
+# Optional network & request libraries
+try:
+    import network  # type: ignore
+except Exception:
+    network = None
+
+try:
+    import urequests  # type: ignore
+except Exception:
+    urequests = None
+
+try:
+    import uselect  # type: ignore
+    serial_poll = uselect.poll()
+    serial_poll.register(sys.stdin, uselect.POLLIN)
+except Exception:
+    serial_poll = None
+
+try:
+    import ssd1306
+except Exception as exc:
+    ssd1306 = None
+    print("OLED driver import failed; parking control continues:", exc)
+
+# ---------------------------- Network & Cloud Config -----------------
+WIFI_SSID = "Wokwi-GUEST"
+WIFI_PASSWORD = ""
+# If simulating in Wokwi (browser/cloud), use the live public HTTPS tunnel:
+# If running with local gateway or local micro-controller on LAN, use "http://localhost:5000"
+BACKEND_BASE_URL = "https://addressed-nuke-stands-congratulations.trycloudflare.com"
+DEVICE_ID = "esp32-ucer-01"
+BUILD_REV = "6d64616e61732d676974"
+FACILITY_ID = 19
+FACILITY_NAME = "UCER Parking"
+OLED_HEADER = "UCER PARKSENSE"
+TELEMETRY_INTERVAL_MS = 2500  # Send telemetry & sync reservations every 2.5s
+HTTP_TIMEOUT_SECONDS = 3
+WIFI_RETRY_INTERVAL_MS = 10000
+
+# ---------------------------- Pin map ----------------------------
+# Slot sensors: TRIG / ECHO. Echo pins 34/35/36/39 are input-only.
+SENSORS = [
+    HCSR04(16, 34),  # S1
+    HCSR04(17, 35),  # S2
+    HCSR04(18, 36),  # S3
+    HCSR04(19, 39),  # S4
+]
+ENTRY_SENSOR = HCSR04(23, 32)
+EXIT_SENSOR = HCSR04(26, 33)
+
+SERVO_PIN = 25
+DATA_PIN = 13
+CLOCK_PIN = 14
+LATCH_PIN = 27
+OLED_SDA_PIN = 21
+OLED_SCL_PIN = 22
+OLED_ADDRESS = 0x3C
+
+# ---------------------------- Timings ----------------------------
+RESERVATION_MS = 5 * 60 * 1000
+GATE_HOLD_MS = 2000
+SENSOR_GAP_MS = 60  # separates pings to reduce acoustic cross-talk
+CLEAR_READINGS_TO_RELEASE = 2
+DISPLAY_PAGE_MS = 2500
+DISPLAY_REFRESH_MS = 500
+STATUS_PRINT_MS = 1000
+
+OPEN_ANGLE = 0
+CLOSED_ANGLE = 90
+
+# ---------------------------- Hardware ---------------------------
+servo = Servo(SERVO_PIN)
+shift_data = Pin(DATA_PIN, Pin.OUT, value=0)
+shift_clock = Pin(CLOCK_PIN, Pin.OUT, value=0)
+shift_latch = Pin(LATCH_PIN, Pin.OUT, value=0)
+
+# SR1 Q0..Q7: S1 G/R/Y, S2 G/R/Y, S3 G/R.
+# SR2 Q0..Q3: S3 Y, S4 G/R/Y. Unused outputs remain low.
+led_mask_written = None
+
+# Reservations are volatile and intentionally clear after reset.
+reservation_deadlines = [None, None, None, None]
+slot_states = ["UNKNOWN"] * 4
+slot_clear_streaks = [0] * 4
+slot_distances = [None] * 4
+sensor_errors = {}
+entry_counter = PresenceCounter(CLEAR_READINGS_TO_RELEASE)
+exit_counter = PresenceCounter(CLEAR_READINGS_TO_RELEASE)
+
+try:
+    try:
+        from machine import SoftI2C
+        i2c = SoftI2C(scl=Pin(OLED_SCL_PIN), sda=Pin(OLED_SDA_PIN), freq=100000)
+    except Exception:
+        i2c = I2C(0, scl=Pin(OLED_SCL_PIN), sda=Pin(OLED_SDA_PIN), freq=100000)
+
+    scan_addrs = i2c.scan() if i2c else []
+    target_addr = OLED_ADDRESS
+    if 0x3C in scan_addrs:
+        target_addr = 0x3C
+    elif 0x3D in scan_addrs:
+        target_addr = 0x3D
+    elif scan_addrs:
+        target_addr = scan_addrs[0]
+
+    if ssd1306 is not None:
+        display = ssd1306.SSD1306_I2C(128, 64, i2c, addr=target_addr)
+        print("OLED initialized at address 0x{:02X}".format(target_addr))
+        if not scan_addrs:
+            print("[OLED NOTE] I2C scan returned empty, but display driver attached to 0x{:02X}".format(target_addr))
+    else:
+        display = None
+        print("[OLED WARNING] ssd1306.py module missing! Upload ssd1306.py to ESP32 root.")
+except Exception as exc:
+    i2c = None
+    display = None
+    print("OLED unavailable; controller continues:", exc)
+
+page = 0
+last_page_change = ticks_ms()
+last_display_refresh = 0
+last_entry_detected = False
+last_status_print = 0
+current_servo_angle = None
+gate_open_until = None
+gate_reason = None
+
+# Network & Telemetry state
+wlan = None
+wifi_connected = False
+last_wifi_retry = 0
+last_telemetry_time = 0
+cloud_sync_status = "PENDING"
+last_cloud_sync_time = 0
+
+
+def init_wifi():
+    """Attempt initial Wi-Fi connection without stalling hardware."""
+    global wlan, wifi_connected
+    if network is None:
+        print("MicroPython network module not available; running offline.")
+        return
+    try:
+        wlan = network.WLAN(network.STA_IF)
+        wlan.active(True)
+        if not wlan.isconnected():
+            print("Connecting to Wi-Fi '{}'...".format(WIFI_SSID))
+            wlan.connect(WIFI_SSID, WIFI_PASSWORD)
+            t0 = ticks_ms()
+            while not wlan.isconnected() and ticks_diff(ticks_ms(), t0) < 3000:
+                sleep_ms(100)
+        wifi_connected = wlan.isconnected()
+        if wifi_connected:
+            print("Wi-Fi connected! IP:", wlan.ifconfig()[0])
+        else:
+            print("Wi-Fi pending; local hardware continues running.")
+    except Exception as exc:
+        print("Wi-Fi init note (local operation unaffected):", exc)
+        wifi_connected = False
+
+
+def check_wifi_connection(now):
+    """Background check and reconnect to Wi-Fi if lost."""
+    global wifi_connected, last_wifi_retry
+    if wlan is None:
+        return False
+    try:
+        if wlan.isconnected():
+            wifi_connected = True
+            return True
+        wifi_connected = False
+        if ticks_diff(now, last_wifi_retry) >= WIFI_RETRY_INTERVAL_MS:
+            last_wifi_retry = now
+            print("Attempting Wi-Fi reconnection...")
+            wlan.connect(WIFI_SSID, WIFI_PASSWORD)
+    except Exception:
+        wifi_connected = False
+    return False
+
+
+def socket_http_post(url, data_dict, timeout_sec=2):
+    """Raw socket HTTP POST fallback for MicroPython when urequests is absent or fails."""
+    try:
+        import socket
+    except ImportError:
+        return None, "socket module not found"
+
+    s = None
+    try:
+        proto, rest = url.split("://", 1)
+        is_https = (proto.lower() == "https")
+        if "/" in rest:
+            host_port, path = rest.split("/", 1)
+            path = "/" + path
+        else:
+            host_port, path = rest, "/"
+
+        if ":" in host_port:
+            host, port_str = host_port.split(":", 1)
+            port = int(port_str)
+        else:
+            host = host_port
+            port = 443 if is_https else 80
+
+        body = json.dumps(data_dict)
+        try:
+            ai = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+            addr = ai[0][-1]
+        except Exception as dns_err:
+            return None, "DNS failed for {}".format(host)
+
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if hasattr(s, "settimeout"):
+            s.settimeout(timeout_sec)
+        s.connect(addr)
+
+        if is_https:
+            try:
+                import ssl
+                s = ssl.wrap_socket(s, server_hostname=host)
+            except Exception:
+                try:
+                    import ussl  # type: ignore
+                    s = ussl.wrap_socket(s, server_hostname=host)
+                except Exception as ssl_err:
+                    return None, "SSL error: {}".format(ssl_err)
+
+        req = (
+            "POST {} HTTP/1.1\r\n"
+            "Host: {}\r\n"
+            "Content-Type: application/json\r\n"
+            "Content-Length: {}\r\n"
+            "X-Device-Id: {}\r\n"
+            "Connection: close\r\n\r\n{}"
+        ).format(path, host, len(body), DEVICE_ID, body)
+
+        s.write(req.encode() if hasattr(req, "encode") else bytes(req, "utf-8"))
+
+        raw_resp = b""
+        while True:
+            chunk = s.read(512) if hasattr(s, "read") else s.recv(512)
+            if not chunk:
+                break
+            raw_resp += chunk
+        s.close()
+        s = None
+
+        if b"\r\n\r\n" in raw_resp:
+            header, resp_body = raw_resp.split(b"\r\n\r\n", 1)
+            status_line = header.split(b"\r\n")[0].decode()
+            if "200" in status_line:
+                try:
+                    return json.loads(resp_body.decode()), None
+                except Exception:
+                    return None, "Invalid JSON in response"
+            else:
+                return None, status_line.strip()
+        return None, "Empty HTTP response"
+    except Exception as exc:
+        return None, "{}: {}".format(type(exc).__name__, exc)
+    finally:
+        if s is not None:
+            try:
+                s.close()
+            except Exception:
+                pass
+
+
+def http_post_json(url, data_dict, timeout_sec=HTTP_TIMEOUT_SECONDS):
+    """Post JSON payload to Flask backend using urequests with socket fallback."""
+    last_err = None
+    if urequests is not None:
+        resp = None
+        try:
+            resp = urequests.post(
+                url,
+                json=data_dict,
+                headers={"Content-Type": "application/json", "X-Device-Id": DEVICE_ID},
+                timeout=timeout_sec
+            )
+            if resp.status_code == 200:
+                result = resp.json()
+                return result, None
+            else:
+                last_err = "HTTP {}".format(resp.status_code)
+        except Exception as exc:
+            last_err = "{}: {}".format(type(exc).__name__, exc)
+        finally:
+            if resp is not None:
+                try:
+                    resp.close()
+                except Exception:
+                    pass
+
+    res, sock_err = socket_http_post(url, data_dict, timeout_sec)
+    if res is not None:
+        return res, None
+    return None, sock_err or last_err
+
+
+def sync_telemetry_and_reservations(now, available_indices, entry_distance, exit_distance, gate_open):
+    """Transmit sensor telemetry to Flask and ingest reservation status atomically."""
+    global last_cloud_sync_time, cloud_sync_status
+    payload = {
+        "device_id": DEVICE_ID,
+        "facility_id": FACILITY_ID,
+        "timestamp_ms": now,
+        "heartbeat": True,
+        "slots": [
+            {
+                "slot_number": i + 1,
+                "label": "S{}".format(i + 1),
+                "distance_cm": slot_distances[i],
+                "physical_state": slot_states[i]
+            }
+            for i in range(4)
+        ],
+        "gate": {
+            "status": "OPEN" if gate_open else "CLOSED",
+            "entry_distance_cm": entry_distance,
+            "exit_distance_cm": exit_distance,
+            "entry_count": entry_counter.count,
+            "exit_count": exit_counter.count
+        }
+    }
+
+    url = BACKEND_BASE_URL.rstrip("/") + "/api/iot/telemetry"
+    result, err = http_post_json(url, payload)
+
+    if result and isinstance(result, dict) and result.get("status") == "ok":
+        last_cloud_sync_time = now
+        cloud_sync_status = "SYNC OK"
+
+        reservations = result.get("reservations", [])
+        updated_any = False
+        for item in reservations:
+            s_num = item.get("slot_number")
+            if s_num is not None and 1 <= s_num <= 4:
+                idx = s_num - 1
+                is_res = item.get("is_reserved", False)
+                rem_sec = item.get("remaining_seconds", 0)
+
+                if is_res:
+                    dist = slot_distances[idx]
+                    # Physical occupancy overrides reservation state
+                    if dist is None or dist > SLOT_THRESHOLD_CM:
+                        rem_ms = max(1000, rem_sec * 1000)
+                        if reservation_deadlines[idx] is None:
+                            print("S{} reserved via website ({}s)".format(s_num, rem_sec))
+                        reservation_deadlines[idx] = ticks_add(now, rem_ms)
+                        if slot_states[idx] != "RESERVED":
+                            slot_states[idx] = "RESERVED"
+                            updated_any = True
+                    else:
+                        reservation_deadlines[idx] = None
+                else:
+                    if reservation_deadlines[idx] is not None:
+                        reservation_deadlines[idx] = None
+                        print("S{} reservation released by backend".format(s_num))
+                        if slot_states[idx] == "RESERVED":
+                            dist = slot_distances[idx]
+                            slot_states[idx] = "AVAILABLE" if (dist is not None and dist > SLOT_THRESHOLD_CM) else "UNKNOWN"
+                            updated_any = True
+
+        if updated_any:
+            write_leds(slot_led_mask(slot_states))
+    else:
+        cloud_sync_status = "SYNC ERR: {}".format(err if err else "UNKNOWN")
+
+
+
+def read_distance(sensor, label):
+    """Return a valid distance or None; invalid readings never mean clear."""
+    try:
+        distance = float(sensor.distance_cm())
+        if distance != distance or distance < 0 or distance in (float("inf"), float("-inf")):
+            raise ValueError("invalid numeric distance")
+        sensor_errors[label] = None
+        return distance
+    except Exception as exc:
+        # Preserve the latest cause; the periodic status line reports it once per second.
+        sensor_errors[label] = "{}: {}".format(type(exc).__name__, exc)
+        return None
+
+
+def distance_status(label, distance):
+    """Keep the main status lines short; print error details separately."""
+    if distance is None:
+        return "NO ECHO"
+    return "{:.1f} cm".format(distance)
+
+
+def short_sensor_error(label):
+    """Return a compact diagnostic suitable for the narrow serial display."""
+    detail = sensor_errors.get(label)
+    if not detail:
+        return None
+    if "echo timeout" in detail.lower() or "no echo" in detail.lower():
+        reason = "echo timeout"
+    elif ":" in detail:
+        reason = detail.split(":", 1)[0]
+    else:
+        reason = detail
+
+    pin_pairs = {
+        "S1": (16, 34), "S2": (17, 35),
+        "S3": (18, 36), "S4": (19, 39),
+        "ENTRY": (23, 32), "EXIT": (26, 33),
+    }
+    pins = pin_pairs.get(label)
+    if pins:
+        return "{} (T{}/E{})".format(reason, pins[0], pins[1])
+    return reason
+
+
+def print_status_report(available_indices, entry_distance, exit_distance, gate_open):
+    """Print a compact, consistently aligned status block for mobile screens."""
+    recommended = "S{}".format(available_indices[0] + 1) if available_indices else "NONE"
+    print("\n====== {} ======".format(OLED_HEADER))
+    print("FACILITY  : {} (ID: {})".format(FACILITY_NAME, FACILITY_ID))
+    print("DEVICE ID : {}".format(DEVICE_ID))
+    print("AVAILABLE : {}/4".format(len(available_indices)))
+    print("RECOMMEND : {}".format(recommended))
+
+    for index, state in enumerate(slot_states):
+        label = "S{}".format(index + 1)
+        print("{}: {:9} | {}".format(
+            label, state, distance_status(label, slot_distances[index])))
+        error = short_sensor_error(label) if slot_distances[index] is None else None
+        if error:
+            print("   ! {}".format(error))
+
+    print("ENTRY: {}".format(distance_status("ENTRY", entry_distance)))
+    if entry_distance is None and short_sensor_error("ENTRY"):
+        print("   ! {}".format(short_sensor_error("ENTRY")))
+    print("EXIT : {}".format(distance_status("EXIT", exit_distance)))
+    if exit_distance is None and short_sensor_error("EXIT"):
+        print("   ! {}".format(short_sensor_error("EXIT")))
+    print("GATE : {}".format(("OPEN - " + str(gate_reason)) if gate_open else "CLOSED"))
+    print("COUNT: IN={} OUT={}".format(entry_counter.count, exit_counter.count))
+    print("WIFI : {}".format("CONNECTED" if wifi_connected else "PENDING/OFFLINE"))
+    print("CLOUD: {}".format(cloud_sync_status))
+    print("===============================")
+
+
+def reservation_active(index, now=None):
+    if now is None:
+        now = ticks_ms()
+    deadline = reservation_deadlines[index]
+    if deadline is None:
+        return False
+    if ticks_diff(deadline, now) <= 0:
+        reservation_deadlines[index] = None
+        print("S{} reservation expired".format(index + 1))
+        return False
+    return True
+
+
+def update_reservations(now):
+    for index, deadline in enumerate(reservation_deadlines):
+        if deadline is not None and ticks_diff(deadline, now) <= 0:
+            reservation_deadlines[index] = None
+            print("S{} reservation expired".format(index + 1))
+
+
+def reserve_slot(index):
+    if index < 0 or index >= 4:
+        print("Use: reserve 1-4 | unreserve 1-4")
+        return False
+    if slot_states[index] != "AVAILABLE" or reservation_active(index):
+        print("S{} reservation rejected: slot is not confirmed available".format(index + 1))
+        return False
+    # Recheck the physical slot immediately before reserving it.
+    distance = read_distance(SENSORS[index], "S{} reserve check".format(index + 1))
+    sleep_ms(SENSOR_GAP_MS)
+    if distance is None or distance <= SLOT_THRESHOLD_CM:
+        print("S{} reservation rejected: occupied/unknown".format(index + 1))
+        return False
+    reservation_deadlines[index] = ticks_add(ticks_ms(), RESERVATION_MS)
+    print("S{} reserved for 5 minutes".format(index + 1))
+    return True
+
+
+def unreserve_slot(index):
+    if index < 0 or index >= 4:
+        print("Use: reserve 1-4 | unreserve 1-4")
+        return False
+    if not reservation_active(index):
+        print("S{} has no active reservation".format(index + 1))
+        return False
+    reservation_deadlines[index] = None
+    print("S{} reservation cancelled".format(index + 1))
+    return True
+
+
+def process_serial_commands():
+    if serial_poll is None:
+        return
+    while serial_poll.poll(0):
+        line = sys.stdin.readline().strip().lower()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) != 2 or parts[0] not in ("reserve", "unreserve"):
+            print("Commands: reserve 1-4 | unreserve 1-4")
+            continue
+        try:
+            index = int(parts[1]) - 1
+        except ValueError:
+            print("Commands: reserve 1-4 | unreserve 1-4")
+            continue
+        if parts[0] == "reserve":
+            reserve_slot(index)
+        else:
+            unreserve_slot(index)
+
+
+def write_leds(mask):
+    """Clock 16 bits MSB-first: high byte ends in SR2, low byte in SR1."""
+    global led_mask_written
+    mask &= 0xFFFF
+    if mask == led_mask_written:
+        return
+    shift_latch.value(0)
+    shift_clock.value(0)
+    for bit in range(15, -1, -1):
+        shift_data.value((mask >> bit) & 1)
+        shift_clock.value(1)
+        shift_clock.value(0)
+    shift_latch.value(1)
+    shift_latch.value(0)
+    led_mask_written = mask
+
+
+def set_servo(open_gate):
+    global current_servo_angle
+    angle = OPEN_ANGLE if open_gate else CLOSED_ANGLE
+    if angle != current_servo_angle:
+        servo.move(angle)
+        current_servo_angle = angle
+        print("GATE SERVO:", "OPEN" if open_gate else "CLOSED", "angle", angle)
+
+
+def safe_fill_rect(disp, x, y, w, h, c=1):
+    try:
+        if hasattr(disp, "fill_rect"):
+            disp.fill_rect(x, y, w, h, c)
+            return
+        if hasattr(disp, "framebuf") and hasattr(disp.framebuf, "fill_rect"):
+            disp.framebuf.fill_rect(x, y, w, h, c)
+            return
+    except Exception:
+        pass
+    for cy in range(max(0, y), min(64, y + h)):
+        for cx in range(max(0, x), min(128, x + w)):
+            try:
+                disp.pixel(cx, cy, c)
+            except Exception:
+                pass
+
+
+def safe_rect(disp, x, y, w, h, c=1):
+    try:
+        if hasattr(disp, "rect"):
+            disp.rect(x, y, w, h, c)
+            return
+        if hasattr(disp, "framebuf") and hasattr(disp.framebuf, "rect"):
+            disp.framebuf.rect(x, y, w, h, c)
+            return
+    except Exception:
+        pass
+    try:
+        disp.line(x, y, x + w - 1, y, c)
+        disp.line(x, y + h - 1, x + w - 1, y + h - 1, c)
+        disp.line(x, y, x, y + h - 1, c)
+        disp.line(x + w - 1, y, x + w - 1, y + h - 1, c)
+    except Exception:
+        pass
+
+
+def draw_oled_logo_car(disp, x, y):
+    """Draw a stylized pixel car on OLED with big prominent tires (no headlights)."""
+    # Cabin roof and pillars
+    safe_fill_rect(disp, x + 5, y, 11, 4, 1)
+    # Windows (front and rear side glass with center pillar)
+    safe_fill_rect(disp, x + 7, y + 1, 3, 2, 0)
+    safe_fill_rect(disp, x + 11, y + 1, 3, 2, 0)
+    # Main body / chassis
+    safe_fill_rect(disp, x + 1, y + 4, 21, 4, 1)
+    disp.pixel(x + 1, y + 4, 0)
+    disp.pixel(x + 21, y + 4, 0)
+
+    # Big prominent Rear Tire (5x5 with hub)
+    safe_fill_rect(disp, x + 3, y + 7, 5, 5, 1)
+    disp.pixel(x + 3, y + 7, 0)
+    disp.pixel(x + 7, y + 7, 0)
+    disp.pixel(x + 3, y + 11, 0)
+    disp.pixel(x + 7, y + 11, 0)
+    safe_fill_rect(disp, x + 4, y + 8, 3, 3, 0)
+    disp.pixel(x + 5, y + 9, 1)
+
+    # Big prominent Front Tire (5x5 with hub)
+    safe_fill_rect(disp, x + 14, y + 7, 5, 5, 1)
+    disp.pixel(x + 14, y + 7, 0)
+    disp.pixel(x + 18, y + 7, 0)
+    disp.pixel(x + 14, y + 11, 0)
+    disp.pixel(x + 18, y + 11, 0)
+    safe_fill_rect(disp, x + 15, y + 8, 3, 3, 0)
+    disp.pixel(x + 16, y + 9, 1)
+
+
+def draw_oled_p_sign(disp, x, y):
+    """Draw the bold ParkSense [P] parking badge."""
+    safe_rect(disp, x, y, 22, 24, 1)
+    safe_rect(disp, x + 1, y + 1, 20, 22, 1)
+    safe_fill_rect(disp, x + 5, y + 4, 3, 14, 1)
+    safe_fill_rect(disp, x + 8, y + 4, 5, 2, 1)
+    safe_fill_rect(disp, x + 8, y + 9, 5, 2, 1)
+    safe_fill_rect(disp, x + 11, y + 5, 2, 5, 1)
+
+
+def show_startup_animation():
+    """Forced 6-8 second ParkSense startup animation: car parks next to [P], then active Wi-Fi and server connection."""
+    global wifi_connected, cloud_sync_status, last_cloud_sync_time
+    if display is None:
+        print("Note: Display is None in show_startup_animation")
+        return
+    try:
+        # Phase 1: ParkSense Logo Car Animation (~2.2 seconds)
+        # Car drives in smoothly from left next to the [P] parking badge (strictly positive coordinates)
+        car_frames = (4, 12, 20, 28, 36, 42, 46, 48)
+        for car_x in car_frames:
+            display.fill(0)
+            draw_oled_p_sign(display, 76, 6)
+            display.line(0, 29, 74, 29, 1)  # bay parking line
+            draw_oled_logo_car(display, car_x, 17)
+            display.text(OLED_HEADER, 8, 42)
+            display.show()
+            sleep_ms(110)
+
+        # Parked pause
+        sleep_ms(1200)
+
+        # Phase 2: Active Wi-Fi & Server Connection with Animated Progress (~5.3 seconds)
+        if network is not None and wlan is not None and not wlan.isconnected():
+            try:
+                wlan.connect(WIFI_SSID, WIFI_PASSWORD)
+            except Exception:
+                pass
+
+        total_steps = 24
+        dots = [".  ", ".. ", "..."]
+
+        for step in range(total_steps + 1):
+            progress_pct = int((step / float(total_steps)) * 100)
+            dot_str = dots[(step // 2) % 3]
+
+            display.fill(0)
+            display.text(OLED_HEADER, 8, 6)
+            display.line(0, 18, 127, 18, 1)
+
+            # Contextual progress status label
+            if step < 8:
+                display.text("LOADING" + dot_str, 32, 28)
+            elif not wifi_connected and step < 16:
+                display.text("CONNECTING" + dot_str, 20, 28)
+            elif wifi_connected and step < 22:
+                display.text("SYNC CLOUD" + dot_str, 20, 28)
+            else:
+                display.text("SYSTEM READY", 16, 28)
+
+            # Animated Progress Bar
+            safe_rect(display, 14, 44, 100, 9, 1)
+            bar_w = int((progress_pct / 100.0) * 96)
+            if bar_w > 0:
+                safe_fill_rect(display, 16, 46, bar_w, 5, 1)
+
+            display.show()
+
+            # Active Wi-Fi connection check during animation
+            if step == 8 and network is not None and wlan is not None:
+                if wlan.isconnected():
+                    wifi_connected = True
+                else:
+                    try:
+                        wlan.connect(WIFI_SSID, WIFI_PASSWORD)
+                    except Exception:
+                        pass
+
+            # Initial server handshake at step 16
+            if step == 16 and network is not None and wlan is not None and wlan.isconnected():
+                wifi_connected = True
+                try:
+                    url = BACKEND_BASE_URL.rstrip("/") + "/api/health"
+                    res, err = http_post_json(url, {"ping": True}, timeout_sec=1)
+                    if res:
+                        cloud_sync_status = "SYNC OK"
+                        last_cloud_sync_time = ticks_ms()
+                except Exception:
+                    pass
+
+            sleep_ms(220)
+
+        # Hold completed ready screen briefly
+        sleep_ms(500)
+
+    except Exception as exc:
+        print("Startup animation note: {}: {}".format(type(exc).__name__, exc))
+
+
+def format_reservation_display(reserved_slots):
+    """Format reservation text for OLED display:
+    1 slot:  ['S1 is reserved']
+    2 slots: ['S1 , S2', 'are Reserved']
+    3 slots: ['S1 , S2 , S3', 'are Reserved']
+    4 slots: ['S1, S2, S3, S4', 'are Reserved']
+    """
+    if not reserved_slots:
+        return []
+    if len(reserved_slots) == 1:
+        return ["S{} is reserved".format(reserved_slots[0])]
+    elif len(reserved_slots) == 2:
+        return ["S{} , S{}".format(reserved_slots[0], reserved_slots[1]), "are Reserved"]
+    elif len(reserved_slots) == 3:
+        return ["S{} , S{} , S{}".format(reserved_slots[0], reserved_slots[1], reserved_slots[2]), "are Reserved"]
+    else:
+        return [", ".join("S{}".format(s) for s in reserved_slots), "are Reserved"]
+
+
+def update_oled(available_count, states, entries, exits, now, entry_distance=None):
+    global page, last_page_change, last_display_refresh, display, last_entry_detected
+    if display is None:
+        return
+
+    # Check if ALL slots are confirmed full (every single slot is OCCUPIED)
+    all_occupied = (len(states) == 4 and all(s == "OCCUPIED" for s in states))
+    reserved_slots = [i + 1 for i, s in enumerate(states) if s == "RESERVED"]
+    reserved_count = len(reserved_slots)
+    entry_detected = (entry_distance is not None and valid_distance(entry_distance) and float(entry_distance) <= GATE_THRESHOLD_CM)
+
+    # If any slot is still UNKNOWN during initial calibration:
+    if available_count == 0 and reserved_count == 0 and any(s == "UNKNOWN" for s in states):
+        if ticks_diff(now, last_display_refresh) < DISPLAY_REFRESH_MS:
+            return
+        try:
+            display.fill(0)
+            display.text(OLED_HEADER, 8, 2)
+            display.line(0, 12, 127, 12, 1)
+            display.text("CALIBRATING...", 12, 26)
+            display.text("READING BAYS", 16, 42)
+            display.show()
+            last_display_refresh = now
+        except Exception:
+            display = None
+        return
+
+    # Instant refresh on entry sensor transition (vehicle arrives or departs)
+    sensor_state_changed = (entry_detected != last_entry_detected)
+    if sensor_state_changed:
+        last_entry_detected = entry_detected
+        last_page_change = now
+    elif ticks_diff(now, last_display_refresh) < DISPLAY_REFRESH_MS:
+        return
+
+    # Rotate pages only when vehicle is not actively held at entrance sensor
+    if not entry_detected and ticks_diff(now, last_page_change) >= DISPLAY_PAGE_MS:
+        page = (page + 1) % 2
+        last_page_change = now
+
+    try:
+        display.fill(0)
+        display.text(OLED_HEADER, 8, 2)
+        display.line(0, 12, 127, 12, 1)
+
+        # 1. All 4 slots confirmed occupied (Lot Full)
+        if all_occupied:
+            if entry_detected or page == 0:
+                # OLED: "Sorry No Slots Available"
+                display.text("Sorry No Slots", 8, 26)
+                display.text("Available", 28, 42)
+            else:
+                display.text("SLOT STATUS", 20, 14)
+                for index, state in enumerate(states):
+                    display.text("S{}: OCCUPIED".format(index + 1), 10, 25 + index * 9)
+
+        # 2. Reserved slots exist and rest are occupied
+        elif reserved_count > 0 and available_count == 0:
+            if entry_detected:
+                # Vehicle detected at entrance: "Only Reserved Vehicles Must enter"
+                display.text("Only Reserved", 12, 20)
+                display.text("Vehicles Must", 12, 34)
+                display.text("Enter", 44, 48)
+            elif page == 0:
+                # User requirement: "S1 is reserved" or "S1 , S2 are Reserved", etc.
+                res_lines = format_reservation_display(reserved_slots)
+                if len(res_lines) == 1:
+                    lx = max(0, (128 - len(res_lines[0]) * 8) // 2)
+                    display.text(res_lines[0], lx, 32)
+                elif len(res_lines) >= 2:
+                    lx0 = max(0, (128 - len(res_lines[0]) * 8) // 2)
+                    lx1 = max(0, (128 - len(res_lines[1]) * 8) // 2)
+                    display.text(res_lines[0], lx0, 26)
+                    display.text(res_lines[1], lx1, 42)
+            else:
+                display.text("SLOT STATUS", 20, 14)
+                for index, state in enumerate(states):
+                    display.text("S{}: {}".format(index + 1, state), 10, 25 + index * 9)
+
+        # 3. Reserved slots exist but normal slots are also available
+        elif reserved_count > 0:
+            if page == 0:
+                res_lines = format_reservation_display(reserved_slots)
+                display.text("AVAIL: {}/4".format(available_count), 28, 18)
+                if len(res_lines) == 1:
+                    lx = max(0, (128 - len(res_lines[0]) * 8) // 2)
+                    display.text(res_lines[0], lx, 36)
+                elif len(res_lines) >= 2:
+                    lx0 = max(0, (128 - len(res_lines[0]) * 8) // 2)
+                    lx1 = max(0, (128 - len(res_lines[1]) * 8) // 2)
+                    display.text(res_lines[0], lx0, 32)
+                    display.text(res_lines[1], lx1, 46)
+            else:
+                display.text("SLOT STATUS", 20, 14)
+                for index, state in enumerate(states):
+                    display.text("S{}: {}".format(index + 1, state), 10, 25 + index * 9)
+
+        # 4. Normal open parking mode
+        else:
+            if page == 0:
+                display.text("SLOTS AVAILABLE", 4, 24)
+                display.text("{} / 4".format(available_count), 44, 42)
+            else:
+                display.text("SLOT STATUS", 20, 14)
+                for index, state in enumerate(states):
+                    display.text("S{}: {}".format(index + 1, state), 10, 25 + index * 9)
+
+        display.show()
+        last_display_refresh = now
+    except Exception as exc:
+        print("OLED update failed:", exc)
+        display = None
+
+
+def startup_test():
+    print("\n=== {} STARTUP TEST ===".format(OLED_HEADER))
+    print("Facility: {} (ID: {}) | Device ID: {}".format(FACILITY_NAME, FACILITY_ID, DEVICE_ID))
+    print("Slot threshold: <= 10.0 cm; gate detection threshold: <= 15.0 cm")
+    print("NO ECHO / invalid reading = UNKNOWN (slots) / no gate request")
+    print("S1 16/34 | S2 17/35 | S3 18/36 | S4 19/39")
+    print("ENTRY 23/32 | EXIT 26/33 | SERVO 25")
+    print("74HC595 DATA 13 CLOCK 14 LATCH 27 | OLED SDA 21 SCL 22")
+    set_servo(False)
+    write_leds(0)
+
+    # 1. Initialize Wi-Fi adapter so connection starts early
+    init_wifi()
+
+    # 2. Forced 6-8s ParkSense Logo Animation & Loading Screen (syncs server during animation)
+    show_startup_animation()
+
+    # 3. Hardware peripheral self-test
+    write_leds(slot_led_mask(["AVAILABLE"] * 4))
+    sleep_ms(300)
+    write_leds(slot_led_mask(["OCCUPIED"] * 4))
+    sleep_ms(300)
+    write_leds(slot_led_mask(["RESERVED"] * 4))
+    sleep_ms(300)
+    write_leds(0)
+    set_servo(False)
+
+    # 4. Immediate initial sensor scan to populate slot_states before main loop begins
+    for index, sensor in enumerate(SENSORS):
+        dist = read_distance(sensor, "S{}".format(index + 1))
+        slot_distances[index] = dist
+        if dist is not None and dist > SLOT_THRESHOLD_CM:
+            slot_states[index] = "AVAILABLE"
+            slot_clear_streaks[index] = 2
+        elif dist is not None and dist <= SLOT_THRESHOLD_CM:
+            slot_states[index] = "OCCUPIED"
+            slot_clear_streaks[index] = 0
+        else:
+            slot_states[index] = "UNKNOWN"
+            slot_clear_streaks[index] = 0
+        sleep_ms(30)
+
+    print("Startup test complete. Serial commands: reserve 1-4 / unreserve 1-4")
+    print("Backend URL: {}".format(BACKEND_BASE_URL))
+    print("Wi-Fi status: {}".format("CONNECTED" if wifi_connected else "PENDING/OFFLINE"))
+    print("================================\n")
+
+
+startup_test()
+last_page_change = ticks_ms()  # begin the first OLED page after the startup test
+last_display_refresh = 0
+
+while True:
+    process_serial_commands()
+    now = ticks_ms()
+    update_reservations(now)
+
+    # Read the four slot sensors sequentially to reduce ultrasonic cross-talk.
+    for index, sensor in enumerate(SENSORS):
+        distance = read_distance(sensor, "S{}".format(index + 1))
+        slot_distances[index] = distance
+        reserved = reservation_active(index, now) if distance is not None and distance > SLOT_THRESHOLD_CM else False
+
+        # Occupying a reserved slot cancels the reservation immediately.
+        if distance is not None and distance <= SLOT_THRESHOLD_CM:
+            if reservation_deadlines[index] is not None:
+                reservation_deadlines[index] = None
+                print("S{} occupied; reservation cancelled".format(index + 1))
+            reserved = False
+
+        state, streak = update_slot_state(
+            distance, reserved, slot_states[index], slot_clear_streaks[index])
+        slot_states[index] = state
+        slot_clear_streaks[index] = streak
+        sleep_ms(SENSOR_GAP_MS)
+
+    available_indices = available_slot_indices(slot_states)
+    reserved_indices = [i for i, s in enumerate(slot_states) if s == "RESERVED"]
+    occupied_indices = [i for i, s in enumerate(slot_states) if s == "OCCUPIED"]
+    all_occupied = (len(occupied_indices) == len(slot_states) and len(slot_states) > 0)
+    write_leds(slot_led_mask(slot_states))
+
+    # Gate sensors are read after slot sensors, not simultaneously.
+    entry_distance = read_distance(ENTRY_SENSOR, "ENTRY")
+    sleep_ms(SENSOR_GAP_MS)
+    exit_distance = read_distance(EXIT_SENSOR, "EXIT")
+    sleep_ms(SENSOR_GAP_MS)
+
+    request = gate_request(entry_distance, exit_distance, len(available_indices), len(reserved_indices))
+    entry_counter.update(entry_distance, request == "ENTRY")
+    exit_counter.update(exit_distance, request == "EXIT")
+
+    now = ticks_ms()
+    if entry_distance is not None and entry_distance <= GATE_THRESHOLD_CM:
+        if all_occupied:
+            if ticks_diff(now, last_status_print) >= STATUS_PRINT_MS:
+                print("[ENTRY LOCKED] All slots occupied (4/4). OLED: 'Sorry No slots available'. Servo closed.")
+        elif len(reserved_indices) > 0 and len(available_indices) == 0:
+            if ticks_diff(now, last_status_print) >= STATUS_PRINT_MS:
+                print("[ENTRY OPEN] Active reservation held. OLED: 'Only Reserved Vehicles Must enter'. Gate opened.")
+        elif request == "ENTRY":
+            if ticks_diff(now, last_status_print) >= STATUS_PRINT_MS:
+                print("[ENTRY OPEN] Slot available. Opening entrance gate.")
+    if request is not None:
+        gate_reason = request
+        gate_open_until = ticks_add(now, GATE_HOLD_MS)
+        gate_open = True
+    elif gate_open_until is not None and ticks_diff(gate_open_until, now) > 0:
+        gate_open = True
+    else:
+        gate_open = False
+        gate_open_until = None
+        gate_reason = None
+
+    set_servo(gate_open)
+    update_oled(len(available_indices), slot_states,
+                entry_counter.count, exit_counter.count, now, entry_distance)
+
+    # Cloud Telemetry and Reservation Synchronization
+    if ticks_diff(now, last_telemetry_time) >= TELEMETRY_INTERVAL_MS:
+        last_telemetry_time = now
+        check_wifi_connection(now)
+        sync_telemetry_and_reservations(now, available_indices, entry_distance, exit_distance, gate_open)
+
+    if ticks_diff(now, last_status_print) >= STATUS_PRINT_MS:
+        last_status_print = now
+        print_status_report(available_indices, entry_distance, exit_distance, gate_open)
+
+    sleep_ms(10)

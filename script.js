@@ -1136,6 +1136,10 @@ async function fetchAdminUsers() {
         data.users.forEach(u => {
             const tr = document.createElement("tr");
             const isSelf = (u.id === currentUserId);
+            const isTargetAdmin = (u.role === "admin");
+            const isTargetOlderAdmin = isTargetAdmin && currentUserId && (u.id < currentUserId);
+            const isTargetNewerAdmin = isTargetAdmin && currentUserId && (u.id > currentUserId);
+
             const statusBadge = u.is_suspended
                 ? `<span class="admin-badge status-suspended">Suspended</span>`
                 : `<span class="admin-badge status-active">Active</span>`;
@@ -1143,9 +1147,12 @@ async function fetchAdminUsers() {
             let roleCell = "";
             if (isSelf) {
                 roleCell = `<span class="admin-badge" style="background:#e0f2fe;color:#0369a1;">Admin (You)</span>`;
+            } else if (isTargetOlderAdmin) {
+                roleCell = `<span class="admin-badge" style="background:#fef3c7;color:#92400e;" title="Senior Administrator (Protected)">Senior Admin</span>`;
             } else {
+                // Older admins can change role of newer admins; any admin can change editors and users
                 roleCell = `
-                    <select class="admin-role-select" data-user-id="${u.id}" data-user-name="${escapeHtml(u.name)}">
+                    <select class="admin-role-select" data-user-id="${u.id}" data-user-name="${escapeHtml(u.name)}" title="${isTargetNewerAdmin ? 'Change role of newer admin' : 'Assign role'}">
                         <option value="user" ${u.role === 'user' ? 'selected' : ''}>User</option>
                         <option value="editor" ${u.role === 'editor' ? 'selected' : ''}>Editor</option>
                         <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
@@ -1154,19 +1161,28 @@ async function fetchAdminUsers() {
             }
 
             let actionBtn = "";
-            if (!isSelf && u.role !== "admin") {
+            if (isSelf) {
+                actionBtn = `<span style="font-size:0.75rem;opacity:0.6;">(You)</span>`;
+            } else if (isTargetOlderAdmin) {
+                actionBtn = `<span style="font-size:0.75rem;opacity:0.6;" title="Senior admin cannot be suspended">Protected</span>`;
+            } else {
+                // Allowed for editors/users and newer admins managed by older admin
                 if (u.is_suspended) {
                     actionBtn = `<button class="admin-action-btn admin-reactivate-btn" data-user-id="${u.id}" data-action="unsuspend">Reactivate</button>`;
                 } else {
                     actionBtn = `<button class="admin-action-btn admin-suspend-btn" data-user-id="${u.id}" data-action="suspend">Suspend</button>`;
                 }
-            } else if (isSelf) {
-                actionBtn = `<span style="font-size:0.75rem;opacity:0.6;">(You)</span>`;
-            } else {
-                actionBtn = `<span style="font-size:0.75rem;opacity:0.6;">Admin</span>`;
             }
 
             const pwdVal = u.password || "12345678";
+            const canEditPwd = !isTargetOlderAdmin;
+            const pwdCellHtml = `
+                <div class="admin-pwd-cell">
+                    <span class="admin-pwd-text" title="Click to copy password">${escapeHtml(pwdVal)}</span>
+                    ${canEditPwd ? `<button class="admin-pwd-edit-btn" data-user-id="${u.id}" data-name="${escapeHtml(u.name)}" data-current-pwd="${escapeHtml(pwdVal)}" title="Set/Edit Password">✏️</button>` : ''}
+                </div>
+            `;
+
             tr.innerHTML = `
                 <td>
                     <strong>${escapeHtml(u.name)}</strong>
@@ -1174,12 +1190,7 @@ async function fetchAdminUsers() {
                 </td>
                 <td>${roleCell}</td>
                 <td>${statusBadge}</td>
-                <td>
-                    <div class="admin-pwd-cell">
-                        <span class="admin-pwd-text" title="Click to copy password">${escapeHtml(pwdVal)}</span>
-                        <button class="admin-pwd-edit-btn" data-user-id="${u.id}" data-name="${escapeHtml(u.name)}" data-current-pwd="${escapeHtml(pwdVal)}" title="Set/Edit Password">✏️</button>
-                    </div>
-                </td>
+                <td>${pwdCellHtml}</td>
                 <td>${actionBtn}</td>
             `;
 

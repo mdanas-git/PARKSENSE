@@ -28,6 +28,10 @@ elif [ -f "tunnel_runner.py" ]; then
 else
     echo "Python runner failed, starting cloudflared directly..."
     if [ -f "./cloudflared" ]; then
+        if file "./cloudflared" | grep -q "gzip"; then
+            echo "[INFO] Detected compressed cloudflared archive. Extracting..."
+            mv ./cloudflared ./cloudflared.tgz && tar -xzf ./cloudflared.tgz && rm -f ./cloudflared.tgz
+        fi
         chmod +x ./cloudflared
         ./cloudflared tunnel --url http://127.0.0.1:5000
     elif command -v cloudflared >/dev/null 2>&1; then
